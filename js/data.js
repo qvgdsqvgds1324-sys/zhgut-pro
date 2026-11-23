@@ -306,6 +306,24 @@
     car: { length: 2.5, section: 1.5, connector: 'dt' }
   };
 
+  /* Геометрия блочного холста: 1000×620, магистраль по центру.
+     45 px = 1 м длины ветви — по этой шкале перетаскивание блока
+     меняет длину и цену. */
+  const CANVAS = {
+    width: 1000,
+    height: 640,
+    trunkY: 320,
+    trunkStart: 70,
+    trunkEnd: 930,
+    brickW: 150,
+    brickH: 64,
+    scale: 28,
+    minLength: 0.5,
+    maxLength: 8,
+    minY: 50,
+    maxY: 560
+  };
+
   function defaultTrunk(typeId) {
     const base = TRUNK_DEFAULTS[typeId] || TRUNK_DEFAULTS.camper;
     return { length: base.length, section: base.section, connector: base.connector };
@@ -315,6 +333,7 @@
     const set = BLOCK_SETS[typeId] || BLOCK_SETS.camper;
     return set.map(function (type, index) {
       const def = BLOCKS[type];
+      const dir = index % 2 ? 1 : -1;
       return {
         id: 'b' + (index + 1),
         type: type,
@@ -322,7 +341,10 @@
         length: def.length,
         section: def.section,
         connector: def.connector,
-        qty: 1
+        qty: 1,
+        x: 150 + index * 115,
+        y: CANVAS.trunkY + dir * (def.length * CANVAS.scale + CANVAS.brickH / 2),
+        parentId: null
       };
     });
   }
@@ -468,6 +490,8 @@
     let id = String(raw.id || ('b' + (index + 1))).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
     if (!id) id = 'b' + (index + 1);
     const sectionOk = SECTIONS.some(function (x) { return x.value === Number(raw.section); });
+    const dir = index % 2 ? 1 : -1;
+    const fallbackY = CANVAS.trunkY + dir * (def.length * CANVAS.scale + CANVAS.brickH / 2);
     return {
       id: id,
       type: type,
@@ -475,7 +499,10 @@
       length: clamp(roundHalf(Number(raw.length) || def.length), 0.5, 8),
       section: sectionOk ? Number(raw.section) : def.section,
       connector: CONNECTORS[raw.connector] ? raw.connector : def.connector,
-      qty: clamp(Math.round(Number(raw.qty) || 1), 1, 4)
+      qty: clamp(Math.round(Number(raw.qty) || 1), 1, 4),
+      x: clamp(Number(raw.x) || (120 + index * 110), 80, 920),
+      y: clamp(Number(raw.y) || fallbackY, CANVAS.minY, CANVAS.maxY),
+      parentId: raw.parentId ? String(raw.parentId).slice(0, 24) : null
     };
   }
 
@@ -493,7 +520,26 @@
       seen[block.id] = true;
       out.push(block);
     });
-    return out.slice(0, 12);
+    const limited = out.slice(0, 12);
+    const byId = {};
+    limited.forEach(function (b) { byId[b.id] = b; });
+    limited.forEach(function (b) {
+      if (b.parentId && !byId[b.parentId]) b.parentId = null;
+    });
+    // защита от циклов и чрезмерной вложенности
+    limited.forEach(function (b) {
+      let cursor = b;
+      let depth = 0;
+      const visited = {};
+      while (cursor && cursor.parentId && depth < 12) {
+        if (visited[cursor.id]) { b.parentId = null; return; }
+        visited[cursor.id] = true;
+        cursor = byId[cursor.parentId];
+        depth += 1;
+      }
+      if (depth >= 12) b.parentId = null;
+    });
+    return limited;
   }
 
   function sanitize(raw) {
@@ -559,6 +605,7 @@
     BLOCKS: BLOCKS,
     BLOCK_SETS: BLOCK_SETS,
     TRUNK_DEFAULTS: TRUNK_DEFAULTS,
+    CANVAS: CANVAS,
     defaultTrunk: defaultTrunk,
     seedBlocks: seedBlocks,
     aggregateBlocks: aggregateBlocks,

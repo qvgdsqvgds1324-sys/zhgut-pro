@@ -82,7 +82,10 @@
   let toastTimer = null;
   let persistTimer = null;
   let asideRaf = 0;
-  let draggedBlockId = null;
+  let selectedBlockId = null;
+  let paletteDragType = null;
+  let canvasDrag = null;
+  let nearestPortId = null;
 
   function encodeState(s) {
     const bytes = new TextEncoder().encode(JSON.stringify(s));
@@ -372,9 +375,62 @@
     return Math.max(1, Math.min(10, Math.floor((30 - others) * 2) / 2));
   }
 
-  function blockLengthMax(block) {
-    const others = Math.max(0, state.length - block.length * block.qty);
-    return Math.max(0.5, Math.min(8, Math.floor(((30 - others) / block.qty) * 2) / 2));
+  function parentOf(block) {
+    return block.parentId ? findBlock(block.parentId) : null;
+  }
+
+  function blockAnchorY(block) {
+    const parent = parentOf(block);
+    return parent ? blockOuterY(parent) : D.CANVAS.trunkY;
+  }
+
+  function blockDir(block) {
+    return block.y < blockAnchorY(block) ? -1 : 1;
+  }
+
+  function blockInnerY(block) {
+    return block.y + (blockDir(block) < 0 ? D.CANVAS.brickH / 2 : -D.CANVAS.brickH / 2);
+  }
+
+  function blockOuterY(block) {
+    return block.y + (blockDir(block) < 0 ? -D.CANVAS.brickH / 2 : D.CANVAS.brickH / 2);
+  }
+
+  function maxLengthFor(block) {
+    const CV = D.CANVAS;
+    const anchor = blockAnchorY(block);
+    const dir = block.y < anchor ? -1 : 1;
+    const space = (dir < 0 ? anchor - CV.minY : CV.maxY - anchor) - CV.brickH / 2;
+    const geomMax = Math.max(CV.minLength, space / CV.scale);
+    const totalMax = (30 - Math.max(0, state.length - block.length * block.qty)) / (block.qty || 1);
+    return Math.max(CV.minLength, Math.floor(Math.min(CV.maxLength, geomMax, totalMax) * 2) / 2);
+  }
+
+  function lengthFromGeometry(block) {
+    const anchor = blockAnchorY(block);
+    const dir = block.y < anchor ? -1 : 1;
+    const distance = Math.abs(block.y - anchor) - D.CANVAS.brickH / 2;
+    return Math.max(D.CANVAS.minLength, Math.min(D.CANVAS.maxLength, Math.round(distance / D.CANVAS.scale * 2) / 2));
+  }
+
+  function snapBlockGeometry(block) {
+    const max = maxLengthFor(block);
+    const length = Math.max(D.CANVAS.minLength, Math.min(lengthFromGeometry(block), max));
+    block.length = length;
+    const anchor = blockAnchorY(block);
+    const dir = block.y < anchor ? -1 : 1;
+    block.y = Math.min(D.CANVAS.maxY, Math.max(D.CANVAS.minY, anchor + dir * (length * D.CANVAS.scale + D.CANVAS.brickH / 2)));
+  }
+
+  function isBlockDescendant(candidateId, ancestorId) {
+    let cursor = findBlock(candidateId);
+    let depth = 0;
+    while (cursor && depth < 20) {
+      if (cursor.id === ancestorId) return true;
+      cursor = cursor.parentId ? findBlock(cursor.parentId) : null;
+      depth += 1;
+    }
+    return false;
   }
 
   function optionsHTML(list, selected) {
@@ -413,83 +469,176 @@
     const maxLen = trunkLengthMax();
     const value = Math.min(Number(trunk.length) || 1, maxLen);
     const pct = maxLen > 1 ? ((value - 1) / (maxLen - 1) * 100).toFixed(1) : '100';
-    return '<div class="trunk-card">' +
-      '<div class="trunk-head">' +
-        '<span class="trunk-badge">БАЗА</span>' +
-        '<span class="trunk-icon">' + BLOCK_ICONS.bolt + '</span>' +
-        '<div class="trunk-title"><b>Магистраль</b><small>От источника питания до распределения</small></div>' +
-        '<span class="trunk-cost">≈ ' + money(lastResult.trunkCost || 0) + '</span>' +
+    return '<div class="trunk-strip">' +
+      '<span class="trunk-badge">БАЗА</span>' +
+      '<div class="ts-title"><b>Магистраль</b><small>источник → распределение</small></div>' +
+      '<div class="ts-range">' +
+        '<span>Длина <b data-trunk-out>' + num(value) + ' м</b></span>' +
+        '<input class="range range-sm" type="range" min="1" max="' + Math.max(1, Math.min(10, maxLen)) + '" step="0.5" value="' + value + '" data-trunk="length" style="--p:' + pct + '%" aria-label="Длина магистрали">' +
       '</div>' +
-      '<div class="brick-controls trunk-controls">' +
-        '<div class="brick-control brick-length">' +
-          '<span>Длина магистрали <b data-trunk-out>' + num(value) + ' м</b></span>' +
-          '<input class="range range-sm" type="range" min="1" max="' + Math.max(1, Math.min(10, maxLen)) + '" step="0.5" value="' + value + '" data-trunk="length" style="--p:' + pct + '%" aria-label="Длина магистрали">' +
-        '</div>' +
-        '<label class="brick-control"><span>Сечение</span><select class="mini-select" data-trunk-field="section">' + sectionOptions(trunk.section) + '</select></label>' +
-        '<label class="brick-control"><span>Разъём</span><select class="mini-select" data-trunk-field="connector">' + connectorOptions(trunk.connector) + '</select></label>' +
-      '</div>' +
+      '<label class="ts-field"><span>Сечение</span><select class="mini-select" data-trunk-field="section">' + sectionOptions(trunk.section) + '</select></label>' +
+      '<label class="ts-field"><span>Разъём</span><select class="mini-select" data-trunk-field="connector">' + connectorOptions(trunk.connector) + '</select></label>' +
+      '<span class="trunk-cost">≈ ' + money(lastResult.trunkCost || 0) + '</span>' +
     '</div>';
   }
 
   function paletteHTML() {
     return '<div class="field">' +
-      '<div class="field-label"><span>Добавить блок</span><span class="field-hint">нажмите — модуль встанет в конец цепи</span></div>' +
-      '<div class="palette">' +
+      '<div class="field-label"><span>Модули</span><span class="field-hint">перетащите на схему или нажмите</span></div>' +
+      '<div class="palette palette-horizontal">' +
         Object.keys(D.BLOCKS).map(function (id) {
           const b = D.BLOCKS[id];
-          return '<button type="button" class="palette-card" data-action="block-add" data-value="' + id + '" style="--brick:' + b.color + '">' +
+          return '<div class="palette-card" role="button" tabindex="0" draggable="true" data-action="block-add" data-value="' + id + '" data-palette-type="' + id + '" style="--brick:' + b.color + '">' +
             '<span class="palette-icon">' + (BLOCK_ICONS[b.icon] || BLOCK_ICONS.plus) + '</span>' +
             '<span class="palette-name">' + b.name + '</span>' +
             '<span class="palette-meta">' + b.circuits + ' ' + circuitsWord(b.circuits) + ' · ' + num(b.length) + ' м</span>' +
             '<span class="palette-plus" aria-hidden="true">+</span>' +
-          '</button>';
+          '</div>';
         }).join('') +
       '</div>' +
     '</div>';
   }
 
-  function blockCardHTML(block) {
+  function ensureSelection() {
+    if (!state.blocks.length) {
+      selectedBlockId = null;
+      return;
+    }
+    if (!selectedBlockId || !findBlock(selectedBlockId)) selectedBlockId = state.blocks[0].id;
+  }
+
+  function canvasPoint(svg, clientX, clientY) {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return { x: 0, y: 0 };
+    return pt.matrixTransform(matrix.inverse());
+  }
+
+  function canvasSVGInner() {
+    const CV = D.CANVAS;
+    const selected = selectedBlockId;
+    const links = state.blocks.map(function (block) {
+      const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
+      const parent = parentOf(block);
+      const sx = parent ? parent.x : block.x;
+      const sy = parent ? blockOuterY(parent) : CV.trunkY;
+      const ex = block.x;
+      const ey = blockInnerY(block);
+      const mid = (sy + ey) / 2;
+      const d = 'M' + sx + ' ' + sy + ' C' + sx + ' ' + mid + ', ' + ex + ' ' + mid + ', ' + ex + ' ' + ey;
+      return '<path class="cv-link' + (block.id === selected ? ' is-selected' : '') + '" d="' + d + '" stroke="' + def.color + '" fill="none" stroke-width="' + (block.id === selected ? 3.6 : 2.4) + '" stroke-linecap="round" opacity=".9"/>';
+    }).join('');
+
+    const blocks = state.blocks.map(function (block, index) {
+      const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
+      const side = block.y < CV.trunkY ? -1 : 1;
+      const innerY = side < 0 ? CV.brickH / 2 : -CV.brickH / 2;
+      const outerY = side < 0 ? -CV.brickH / 2 : CV.brickH / 2;
+      const studY = side < 0 ? -CV.brickH / 2 + 2 : CV.brickH / 2 - 2;
+      const isSelected = block.id === selected;
+      const isPortTarget = nearestPortId === block.id;
+      return '<g class="cv-block' + (isSelected ? ' is-selected' : '') + (isPortTarget ? ' is-port-target' : '') + '" data-cv-block="' + block.id + '" transform="translate(' + block.x + ' ' + block.y + ')" tabindex="0" role="button" aria-label="Блок ' + def.name + ', ' + block.circuits + ' цепей, ' + num(block.length) + ' метров">' +
+        (isSelected ? '<rect class="cv-sel" x="' + (-CV.brickW / 2 - 5) + '" y="' + (-CV.brickH / 2 - 5) + '" width="' + (CV.brickW + 10) + '" height="' + (CV.brickH + 10) + '" rx="14" fill="none" stroke="#F3DCC9" stroke-width="1.4" stroke-dasharray="6 5"/>' : '') +
+        '<rect class="cv-brick" x="' + (-CV.brickW / 2) + '" y="' + (-CV.brickH / 2) + '" width="' + CV.brickW + '" height="' + CV.brickH + '" rx="10" fill="' + def.color + '" fill-opacity=".2" stroke="' + def.color + '" stroke-width="' + (isSelected ? 2.6 : 1.6) + '"/>' +
+        [-48, -16, 16, 48].map(function (dx) {
+          return '<circle cx="' + dx + '" cy="' + studY + '" r="2.6" fill="' + def.color + '" fill-opacity=".65"/>';
+        }).join('') +
+        '<text class="cv-index" x="' + (-CV.brickW / 2 + 9) + '" y="' + (-CV.brickH / 2 + 14) + '">B' + (index + 1) + '</text>' +
+        '<text class="cv-name" x="0" y="-2" text-anchor="middle">' + def.short + '</text>' +
+        '<text class="cv-sub" x="0" y="14" text-anchor="middle">' + block.circuits + ' ЦЕП.' + (block.qty > 1 ? ' ×' + block.qty : '') + ' · ' + num(block.length) + ' М</text>' +
+        '<circle class="cv-port-in" cx="0" cy="' + innerY + '" r="4.5" fill="' + def.color + '"/>' +
+        '<circle class="cv-port-out" cx="0" cy="' + outerY + '" r="4.5" fill="#0B1B25" stroke="' + def.color + '" stroke-width="1.6"/>' +
+      '</g>';
+    }).join('');
+
+    const trunks = '<g class="cv-trunk-conn">' +
+        '<rect x="' + (CV.trunkStart - 22) + '" y="' + (CV.trunkY - 11) + '" width="44" height="22" rx="5" fill="#0B1B25" stroke="#E8B080" stroke-width="1.5"/>' +
+        [-12, -4, 4, 12].map(function (dx) { return '<circle cx="' + (CV.trunkStart + dx) + '" cy="' + CV.trunkY + '" r="1.7" fill="#E8B080"/>'; }).join('') +
+        '<text class="cv-label" x="' + CV.trunkStart + '" y="' + (CV.trunkY - 20) + '" text-anchor="middle">X1</text>' +
+        '<rect x="' + (CV.trunkEnd - 22) + '" y="' + (CV.trunkY - 11) + '" width="44" height="22" rx="5" fill="#0B1B25" stroke="#E8B080" stroke-width="1.5"/>' +
+        [-12, -4, 4, 12].map(function (dx) { return '<circle cx="' + (CV.trunkEnd + dx) + '" cy="' + CV.trunkY + '" r="1.7" fill="#E8B080"/>'; }).join('') +
+        '<text class="cv-label" x="' + CV.trunkEnd + '" y="' + (CV.trunkY - 20) + '" text-anchor="middle">X2</text>' +
+      '</g>';
+
+    const empty = state.blocks.length ? '' :
+      '<g class="cv-empty"><rect x="330" y="286" width="340" height="148" rx="16" fill="#0F2634" stroke="#E8B080" stroke-opacity=".3" stroke-dasharray="5 5"/>' +
+      '<text x="500" y="346" text-anchor="middle" class="cv-empty-title">ПЕРЕТАЩИТЕ МОДУЛЬ</text>' +
+      '<text x="500" y="372" text-anchor="middle" class="cv-empty-sub">из палитры на магистраль</text></g>';
+
+    return '<rect x="16" y="16" width="968" height="608" rx="6" class="cv-frame"/>' +
+      '<text x="32" y="44" class="cv-kicker">МОДУЛЬНАЯ СХЕМА · ПЕРЕТАЩИТЕ БЛОК</text>' +
+      '<text x="968" y="44" text-anchor="end" class="cv-kicker">' + lastResult.code + '</text>' +
+      '<line x1="32" y1="54" x2="968" y2="54" class="cv-rule"/>' +
+      '<path d="M' + CV.trunkStart + ' ' + CV.trunkY + 'H' + CV.trunkEnd + '" stroke="#DCE6EA" stroke-opacity=".12" stroke-width="16" stroke-linecap="round" fill="none"/>' +
+      '<path d="M' + CV.trunkStart + ' ' + CV.trunkY + 'H' + CV.trunkEnd + '" stroke="#2F8F86" stroke-opacity=".22" stroke-width="10" stroke-linecap="round" fill="none"/>' +
+      '<path d="M' + CV.trunkStart + ' ' + CV.trunkY + 'H' + CV.trunkEnd + '" stroke="#E8B080" stroke-width="2" stroke-linecap="round" fill="none"/>' +
+      '<path class="cv-pulse" d="M' + CV.trunkStart + ' ' + CV.trunkY + 'H' + CV.trunkEnd + '" stroke="#FFD9B0" stroke-width="2" stroke-dasharray="3 36" stroke-linecap="round" fill="none"/>' +
+      links + trunks + blocks + empty +
+      '<text x="32" y="610" class="cv-scale">1 М ≈ ' + CV.scale + ' ЕД. СХЕМЫ · ' + state.blocks.length + ' БЛОКОВ · ' + state.circuits + ' ЦЕПЕЙ</text>' +
+      '<text x="968" y="610" text-anchor="end" class="cv-scale">' + (state.sealed ? 'ГЕРМЕТИЧНЫЕ РАЗЪЁМЫ' : 'РАЗЪЁМЫ БЕЗ УПЛОТНЕНИЙ') + ' · ' + lastResult.ip.name + '</text>';
+  }
+
+  function canvasPropsHTML() {
+    ensureSelection();
+    const block = findBlock(selectedBlockId);
+    if (!block) {
+      return '<div class="cp-empty"><b>Блок не выбран</b><span>Перетащите модуль из палитры на схему или нажмите на плечо блока.</span></div>';
+    }
     const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
-    const index = state.blocks.indexOf(block);
-    const maxLen = blockLengthMax(block);
+    const index = state.blocks.indexOf(block) + 1;
+    const maxLen = maxLengthFor(block);
     const value = Math.min(block.length, maxLen);
-    const pct = ((value - 0.5) / Math.max(0.5, maxLen - 0.5) * 100).toFixed(1);
-    const sec = D.SECTIONS.find(function (s) { return s.value === Number(block.section); }) || D.SECTIONS[3];
-    const cost = blockCost(block.id);
-    return '<article class="brick" data-block="' + block.id + '" style="--brick:' + def.color + '">' +
-      '<div class="brick-head">' +
-        '<span class="brick-grip" draggable="true" role="button" tabindex="0" data-block-grip="' + block.id + '" aria-label="Перетащить блок ' + def.name + '" title="Перетащить">' +
-          '<svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/></g></svg>' +
-        '</span>' +
-        '<span class="brick-icon">' + (BLOCK_ICONS[def.icon] || BLOCK_ICONS.plus) + '</span>' +
-        '<div class="brick-name"><b>' + def.name + '</b><small data-block-meta="' + block.id + '">' + block.circuits + ' ' + circuitsWord(block.circuits) + ' · ' + num(block.length) + ' м · ' + sec.label + '</small></div>' +
-        '<span class="brick-cost" data-block-cost="' + block.id + '">≈ ' + money(cost) + '</span>' +
-        '<div class="brick-actions">' +
-          '<button type="button" class="brick-btn" data-action="block-up" data-id="' + block.id + '" title="Выше" aria-label="Переместить выше"' + (index === 0 ? ' disabled' : '') + '>↑</button>' +
-          '<button type="button" class="brick-btn" data-action="block-down" data-id="' + block.id + '" title="Ниже" aria-label="Переместить ниже"' + (index === state.blocks.length - 1 ? ' disabled' : '') + '>↓</button>' +
-          '<button type="button" class="brick-btn" data-action="block-dup" data-id="' + block.id + '" title="Дублировать" aria-label="Дублировать блок">⧉</button>' +
-          '<button type="button" class="brick-btn is-danger" data-action="block-del" data-id="' + block.id + '" title="Удалить" aria-label="Удалить блок">×</button>' +
-        '</div>' +
+    const pct = maxLen > 0.5 ? ((value - 0.5) / (maxLen - 0.5) * 100).toFixed(1) : '100';
+    const parent = parentOf(block);
+    const options = ['<option value="">Магистраль</option>'].concat(state.blocks.filter(function (b) {
+      return b.id !== block.id && !isBlockDescendant(b.id, block.id);
+    }).map(function (b, i) {
+      return '<option value="' + b.id + '"' + (block.parentId === b.id ? ' selected' : '') + '>B' + (state.blocks.indexOf(b) + 1) + ' · ' + (D.BLOCKS[b.type] || {}).name + '</option>';
+    })).join('');
+
+    return '<div class="cp-card" style="--brick:' + def.color + '">' +
+      '<div class="cp-head">' +
+        '<span class="cp-icon">' + (BLOCK_ICONS[def.icon] || BLOCK_ICONS.plus) + '</span>' +
+        '<div class="cp-title"><b>' + def.name + '</b><small>B' + index + ' · ' + (parent ? 'от блока B' + (state.blocks.indexOf(parent) + 1) : 'на магистрали') + '</small></div>' +
+        '<span class="cp-cost">≈ ' + money(blockCost(block.id)) + '</span>' +
       '</div>' +
-      '<div class="brick-controls">' +
-        '<div class="brick-control brick-length">' +
-          '<span>Длина ветви <b data-block-len-out="' + block.id + '">' + num(block.length) + ' м</b></span>' +
-          '<input class="range range-sm" type="range" min="0.5" max="' + maxLen + '" step="0.5" value="' + value + '" data-block-length data-id="' + block.id + '" style="--p:' + pct + '%" aria-label="Длина ветви ' + def.name + '">' +
-        '</div>' +
-        '<label class="brick-control"><span>Сечение</span><select class="mini-select" data-block-field="section" data-id="' + block.id + '">' + sectionOptions(block.section) + '</select></label>' +
-        '<label class="brick-control"><span>Разъём</span><select class="mini-select" data-block-field="connector" data-id="' + block.id + '">' + connectorOptions(block.connector) + '</select></label>' +
-        '<div class="brick-control"><span>Цепи</span><div class="mini-stepper">' +
-          '<button type="button" data-action="block-circuits-minus" data-id="' + block.id + '" aria-label="Меньше цепей">−</button>' +
-          '<b>' + block.circuits + '</b>' +
-          '<button type="button" data-action="block-circuits-plus" data-id="' + block.id + '" aria-label="Больше цепей">+</button>' +
+      '<div class="cp-grid">' +
+        '<div class="cp-field"><span>Цепи</span><div class="mini-stepper">' +
+          '<button type="button" data-action="block-circuits-minus" data-id="' + block.id + '" aria-label="Меньше цепей">−</button><b>' + block.circuits + '</b><button type="button" data-action="block-circuits-plus" data-id="' + block.id + '" aria-label="Больше цепей">+</button>' +
         '</div></div>' +
-        '<div class="brick-control"><span>Кол-во</span><div class="mini-stepper">' +
-          '<button type="button" data-action="block-qty-minus" data-id="' + block.id + '" aria-label="Меньше блоков">−</button>' +
-          '<b>' + block.qty + '</b>' +
-          '<button type="button" data-action="block-qty-plus" data-id="' + block.id + '" aria-label="Больше блоков">+</button>' +
+        '<div class="cp-field"><span>Кол-во</span><div class="mini-stepper">' +
+          '<button type="button" data-action="block-qty-minus" data-id="' + block.id + '" aria-label="Меньше блоков">−</button><b>' + block.qty + '</b><button type="button" data-action="block-qty-plus" data-id="' + block.id + '" aria-label="Больше блоков">+</button>' +
         '</div></div>' +
+        '<label class="cp-field"><span>Сечение</span><select class="mini-select" data-block-field="section" data-id="' + block.id + '">' + sectionOptions(block.section) + '</select></label>' +
+        '<label class="cp-field"><span>Разъём</span><select class="mini-select" data-block-field="connector" data-id="' + block.id + '">' + connectorOptions(block.connector) + '</select></label>' +
+        '<label class="cp-field"><span>Подключение</span><select class="mini-select" data-block-field="parent" data-id="' + block.id + '">' + options + '</select></label>' +
+        '<div class="cp-field cp-length"><span>Длина ветви <b>' + num(value) + ' м</b></span><input class="range range-sm" type="range" min="0.5" max="' + maxLen + '" step="0.5" value="' + value + '" data-canvas-length data-id="' + block.id + '" style="--p:' + pct + '%" aria-label="Длина ветви ' + def.name + '"></div>' +
       '</div>' +
-    '</article>';
+      '<div class="cp-actions">' +
+        '<button type="button" class="btn btn-ghost btn-small" data-action="block-dup" data-id="' + block.id + '">Дублировать</button>' +
+        '<button type="button" class="btn btn-ghost btn-small cp-danger" data-action="block-del" data-id="' + block.id + '">Удалить</button>' +
+        '<span class="cp-note">Тяните блок на схеме — длина и цена меняются.</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderCanvasOnly() {
+    const stage = $('#canvasStage');
+    if (stage) stage.innerHTML = canvasSVGInner();
+  }
+
+  function renderCanvasPropsOnly() {
+    const host = $('#canvasProps');
+    if (host) host.innerHTML = canvasPropsHTML();
+  }
+
+  function selectCanvasBlock(id) {
+    selectedBlockId = id;
+    renderCanvasOnly();
+    renderCanvasPropsOnly();
+    scheduleAside();
   }
 
   function blockSummaryHTML() {
@@ -541,23 +690,28 @@
       '<p class="field-note" style="margin-top:-12px">Сейчас в расчёте: ' + state.circuits + ' ' + circuitsWord(state.circuits) +
         ' · ' + num(state.circuits * state.length) + ' погонных метров провода · до ' + sec.amp + ' А на цепь при сечении ' + sec.label + '.</p>' +
       '<div class="mode-hint">' +
-        '<div><b>Хотите собрать из модулей?</b><p>Переключитесь на блочный режим: добавляйте свет, розетки, насос и другие модули, меняйте их местами и настройки.</p></div>' +
+        '<div><b>Хотите собрать из модулей?</b><p>Переключитесь на блочный режим: перетаскивайте свет, розетки, насос и другие модули прямо по схеме жгута.</p></div>' +
         '<button type="button" class="btn btn-ghost btn-small" data-action="mode" data-value="blocks">Собрать блоками →</button>' +
       '</div>';
 
+    ensureSelection();
     const blocksContent =
-      '<p class="step-lead block-lead">Жгут = магистраль + модули. Добавляйте блоки из палитры, меняйте цепи, длину и разъёмы. Порядок блоков можно перетаскивать.</p>' +
       trunkCardHTML() +
       paletteHTML() +
-      '<div class="block-list" id="blockList">' +
-        (state.blocks.length ? state.blocks.map(blockCardHTML).join('') : '<div class="block-empty"><span class="block-empty-icon">' + BLOCK_ICONS.plus + '</span><b>В жгуте пока только магистраль</b><p>Добавьте первый модуль из палитры выше — свет, розетки, насос или силовой выход.</p></div>') +
+      '<div class="canvas-scroll">' +
+        '<div class="canvas-wrap" id="canvasWrap">' +
+          '<svg id="canvasStage" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Модульная схема жгута">' + canvasSVGInner() + '</svg>' +
+          '<span class="canvas-drop-hint">отпустите модуль на схеме</span>' +
+        '</div>' +
       '</div>' +
+      '<p class="canvas-caption">Тяните блок за корпус; ближе к магистрали — короче ветвь. Порт на внешней стороне блока — для подключения дочерних модулей. <button type="button" class="text-link" data-action="scroll-props">Настроить выбранный блок ↓</button></p>' +
+      '<div class="canvas-props" id="canvasProps">' + canvasPropsHTML() + '</div>' +
       blockSummaryHTML();
 
     return '<div class="step-head">' +
         '<p class="step-kicker">Шаг 2 · Состав</p>' +
-        '<h3>' + (blocks ? 'Соберите жгут из блоков' : 'Геометрия и условия') + '</h3>' +
-        '<p class="step-lead">' + (blocks ? 'Модульная сборка: блоки можно добавлять, дублировать, перетаскивать и настраивать по отдельности.' : 'Длина, количество цепей и ветвей определяют материалы и трудозатраты. Условия эксплуатации — защиту и коэффициенты.') + '</p>' +
+        '<h3>' + (blocks ? 'Соберите жгут на схеме' : 'Геометрия и условия') + '</h3>' +
+        '<p class="step-lead">' + (blocks ? 'Перетащите модуль из палитры на схему. Блок подключится к магистрали; тяните ближе или дальше — длина ветви и цена изменятся. Соединить блок с другим блоком можно через «Подключение» или порт.' : 'Длина, количество цепей и ветвей определяют материалы и трудозатраты. Условия эксплуатации — защиту и коэффициенты.') + '</p>' +
       '</div>' +
       modeSwitch() +
       (blocks ? blocksContent : simpleContent) +
@@ -601,7 +755,7 @@
       '<div class="field">' +
         '<div class="field-label"><span>' + (blocksMode ? 'Сечение магистрали' : 'Сечение жилы') + '</span><span class="field-hint">до 100 А на цепь</span></div>' +
         '<div class="opt-grid cols-5" role="group" aria-label="Сечение">' + sections + '</div>' +
-        (blocksMode ? '<p class="field-note">Здесь выбирается сечение магистрали. Сечения отдельных модулей задаются в шаге 2 на карточках блоков.</p>' : '') +
+        (blocksMode ? '<p class="field-note">Здесь выбирается сечение магистрали. Сечения отдельных модулей задаются в шаге 2 на схеме — выделите блок и откройте его настройки.</p>' : '') +
       '</div>' +
       '<div class="field">' +
         '<div class="field-label"><span>Изоляция</span><span class="field-hint">температурный класс</span></div>' +
@@ -828,7 +982,7 @@
     const x0 = 64;
     const x1 = 596;
     const y = 205;
-    const blocks = state.blocks.slice(0, 8);
+    const blocks = state.blocks.slice().sort(function (a, b) { return a.x - b.x; }).slice(0, 8);
     const n = blocks.length;
     const span = x1 - x0 - 150;
     const xs = blocks.map(function (_, i) {
@@ -1001,13 +1155,26 @@
       ? state.qty + ' шт · скидка ' + Math.round(r.discount * 100) + '%'
       : 'за 1 жгут · партия 1 шт';
     const nextLabel = step === 6 ? 'К заявке' : 'Перейти к итогу';
+    const onCanvas = state.mode === 'blocks' && step === 2;
+    const visual = onCanvas
+      ? '<div class="pv-list">' + (state.blocks.length
+          ? state.blocks.map(function (block, index) {
+              const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
+              return '<div class="pv-item' + (block.id === selectedBlockId ? ' is-selected' : '') + '" style="--brick:' + def.color + '">' +
+                '<span class="pv-dot"></span>' +
+                '<span class="pv-item-name">B' + (index + 1) + ' · ' + def.name + '</span>' +
+                '<span class="pv-item-meta">' + block.circuits + ' ц.' + (block.qty > 1 ? ' ×' + block.qty : '') + '</span>' +
+              '</div>';
+            }).join('')
+          : '<p class="pv-list-empty">Пока только магистраль. Перетащите модуль на схему.</p>') + '</div>'
+      : '<div class="pv-drawing">' + drawHarness() + '</div>';
 
     host.innerHTML =
       '<div class="preview-head">' +
-        '<div><span class="pv-kicker">Эскиз жгута</span><div class="pv-title">' + t.name + ' · ' + r.purpose.name + '</div></div>' +
+        '<div><span class="pv-kicker">' + (onCanvas ? 'Состав на схеме' : 'Эскиз жгута') + '</span><div class="pv-title">' + t.name + ' · ' + r.purpose.name + '</div></div>' +
         '<span class="pv-code">' + r.code + '</span>' +
       '</div>' +
-      '<div class="pv-drawing">' + drawHarness() + '</div>' +
+      visual +
       '<div class="metrics">' +
         '<div class="metric"><span>Длина</span><b>' + num(state.length) + ' м</b></div>' +
         '<div class="metric"><span>Цепи</span><b>' + state.circuits + '</b></div>' +
@@ -1084,10 +1251,11 @@
       if (!state.blocks.length) state.blocks = D.seedBlocks(state.type);
       if (!state.trunk) state.trunk = D.defaultTrunk(state.type);
       state.mode = 'blocks';
+      selectedBlockId = state.blocks.length ? state.blocks[0].id : null;
       syncBlocksAggregate();
       state = D.sanitize(state);
       afterChange(true);
-      toast('Модульный режим: добавляйте блоки, меняйте местами и настраивайте.');
+      toast('Модульный режим: перетаскивайте блоки прямо по схеме.');
     } else {
       state.mode = 'simple';
       if (state.simpleSnapshot) {
@@ -1114,34 +1282,73 @@
     return '';
   }
 
-  function addBlock(typeId) {
+  function addBlock(typeId, dropX, dropY) {
     const def = D.BLOCKS[typeId];
     if (!def) return;
-    const warn = limitMessage(def.circuits, def.length, 1);
+    const CV = D.CANVAS;
+    let x;
+    let y;
+    let length;
+    if (typeof dropX === 'number' && typeof dropY === 'number') {
+      x = Math.min(910, Math.max(90, dropX));
+      const side = dropY < CV.trunkY ? -1 : 1;
+      const geomMax = Math.max(CV.minLength, ((side < 0 ? CV.trunkY - CV.minY : CV.maxY - CV.trunkY) - CV.brickH / 2) / CV.scale);
+      const available = Math.max(CV.minLength, 30 - state.length);
+      const rawDistance = Math.abs(dropY - CV.trunkY) - CV.brickH / 2;
+      const wanted = rawDistance > 0 ? rawDistance / CV.scale : CV.minLength;
+      length = Math.max(CV.minLength, Math.min(CV.maxLength, geomMax, available, wanted));
+      length = Math.floor(length * 2) / 2;
+      y = CV.trunkY + side * (length * CV.scale + CV.brickH / 2);
+    } else {
+      const sides = state.blocks.length % 2 ? [1, -1] : [-1, 1];
+      let slot = null;
+      sides.some(function (side) {
+        for (let col = 0; col < 6; col += 1) {
+          const candidateX = 130 + col * 150;
+          const occupied = state.blocks.some(function (b) {
+            return Math.sign(b.y - CV.trunkY) === side && Math.abs(b.x - candidateX) < 105;
+          });
+          if (!occupied) {
+            slot = { x: candidateX, side: side };
+            return true;
+          }
+        }
+        return false;
+      });
+      if (!slot) slot = { x: 130, side: -1 };
+      x = slot.x;
+      length = Math.min(def.length, Math.max(CV.minLength, 30 - state.length));
+      y = CV.trunkY + slot.side * (length * CV.scale + CV.brickH / 2);
+    }
+    const warn = limitMessage(def.circuits, length, 1);
     if (warn) { toast(warn); return; }
     const block = {
       id: nextBlockId(),
       type: typeId,
       circuits: def.circuits,
-      length: def.length,
+      length: length,
       section: def.section,
       connector: def.connector,
-      qty: 1
+      qty: 1,
+      x: x,
+      y: y,
+      parentId: null
     };
     state.blocks.push(block);
+    selectedBlockId = block.id;
     syncBlocksAggregate();
     afterChange(true);
-    toast('Блок «' + def.name + '» добавлен в жгут');
-    requestAnimationFrame(function () {
-      const el = document.querySelector('[data-block="' + block.id + '"]');
-      if (el) el.scrollIntoView({ behavior: motionOK ? 'smooth' : 'auto', block: 'nearest' });
-    });
+    toast('Блок «' + def.name + '» добавлен на схему');
   }
 
   function removeBlock(id) {
     const block = findBlock(id);
     if (!block) return;
+    state.blocks.forEach(function (b) {
+      if (b.parentId === id) b.parentId = null;
+    });
     state.blocks = state.blocks.filter(function (b) { return b.id !== id; });
+    if (selectedBlockId === id) selectedBlockId = state.blocks.length ? state.blocks[0].id : null;
     syncBlocksAggregate();
     afterChange(true);
     toast('Блок «' + (D.BLOCKS[block.type] || {}).name + '» удалён');
@@ -1152,22 +1359,19 @@
     if (!block) return;
     const warn = limitMessage(block.circuits, block.length, 1);
     if (warn) { toast(warn); return; }
-    const copy = Object.assign({}, block, { id: nextBlockId(), qty: 1 });
-    const index = state.blocks.indexOf(block);
-    state.blocks.splice(index + 1, 0, copy);
+    const side = block.y < D.CANVAS.trunkY ? -1 : 1;
+    const copy = Object.assign({}, block, {
+      id: nextBlockId(),
+      qty: 1,
+      parentId: null,
+      x: Math.min(880, Math.max(100, block.x + 36)),
+      y: D.CANVAS.trunkY + side * (block.length * D.CANVAS.scale + D.CANVAS.brickH / 2)
+    });
+    state.blocks.push(copy);
+    selectedBlockId = copy.id;
     syncBlocksAggregate();
     afterChange(true);
     toast('Блок продублирован');
-  }
-
-  function moveBlock(id, delta) {
-    const index = state.blocks.findIndex(function (b) { return b.id === id; });
-    const next = index + delta;
-    if (index < 0 || next < 0 || next >= state.blocks.length) return;
-    const tmp = state.blocks[index];
-    state.blocks[index] = state.blocks[next];
-    state.blocks[next] = tmp;
-    afterChange(true);
   }
 
   function adjustBlockCircuits(id, delta) {
@@ -1199,8 +1403,21 @@
   function updateBlockField(id, field, value) {
     const block = findBlock(id);
     if (!block) return;
-    if (field === 'section') block.section = Number(value);
-    else if (field === 'connector') block.connector = value;
+    if (field === 'section') {
+      block.section = Number(value);
+    } else if (field === 'connector') {
+      block.connector = value;
+    } else if (field === 'parent') {
+      if (value && (value === block.id || isBlockDescendant(value, block.id))) {
+        toast('Нельзя подключить блок к самому себе или своему потомку');
+        afterChange(true);
+        return;
+      }
+      block.parentId = value || null;
+      const anchor = blockAnchorY(block);
+      const dir = block.y < anchor ? -1 : 1;
+      block.y = Math.min(D.CANVAS.maxY, Math.max(D.CANVAS.minY, anchor + dir * (block.length * D.CANVAS.scale + D.CANVAS.brickH / 2)));
+    }
     syncBlocksAggregate();
     afterChange(true);
   }
@@ -1208,38 +1425,35 @@
   function resetBlocks() {
     state.blocks = D.seedBlocks(state.type);
     state.trunk = D.defaultTrunk(state.type);
+    selectedBlockId = state.blocks.length ? state.blocks[0].id : null;
     syncBlocksAggregate();
     afterChange(true);
     toast('Набор блоков сброшен к типовому');
   }
 
-  function onBlockLength(el) {
+  function onCanvasLength(el) {
     const block = findBlock(el.dataset.id);
     if (!block) return;
-    const max = blockLengthMax(block);
+    const max = maxLengthFor(block);
     const value = Math.min(parseFloat(el.value), max);
     if (isNaN(value)) return;
     block.length = value;
+    const anchor = blockAnchorY(block);
+    const dir = block.y < anchor ? -1 : 1;
+    block.y = Math.min(D.CANVAS.maxY, Math.max(D.CANVAS.minY, anchor + dir * (value * D.CANVAS.scale + D.CANVAS.brickH / 2)));
     el.value = value;
-    const pct = ((value - 0.5) / Math.max(0.5, max - 0.5) * 100).toFixed(1);
+    const pct = max > 0.5 ? ((value - 0.5) / (max - 0.5) * 100).toFixed(1) : '100';
     el.style.setProperty('--p', pct + '%');
+    const label = el.closest('.cp-field') ? el.closest('.cp-field').querySelector('span b') : null;
+    if (label) label.textContent = num(value) + ' м';
     syncBlocksAggregate();
     lastResult = C.calc(state, D);
-    const out = document.querySelector('[data-block-len-out="' + block.id + '"]');
-    if (out) out.textContent = num(value) + ' м';
-    refreshBlockCard(block);
+    const cost = document.querySelector('.cp-cost');
+    if (cost) cost.textContent = '≈ ' + money(blockCost(block.id));
+    renderCanvasOnly();
     scheduleAside();
     updateMobileBar();
     persistSoon();
-  }
-
-  function refreshBlockCard(block) {
-    const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
-    const sec = D.SECTIONS.find(function (s) { return s.value === Number(block.section); }) || D.SECTIONS[3];
-    const meta = document.querySelector('[data-block-meta="' + block.id + '"]');
-    if (meta) meta.textContent = block.circuits + ' ' + circuitsWord(block.circuits) + ' · ' + num(block.length) + ' м · ' + sec.label;
-    const cost = document.querySelector('[data-block-cost="' + block.id + '"]');
-    if (cost) cost.textContent = '≈ ' + money(blockCost(block.id));
   }
 
   function onTrunkLength(el) {
@@ -1254,33 +1468,19 @@
     if (out) out.textContent = num(value) + ' м';
     syncBlocksAggregate();
     lastResult = C.calc(state, D);
-    document.querySelectorAll('[data-block]').forEach(function (card) {
-      const block = findBlock(card.dataset.block);
-      if (block) refreshBlockCard(block);
-    });
     const trunkCost = document.querySelector('.trunk-cost');
     if (trunkCost) trunkCost.textContent = '≈ ' + money(lastResult.trunkCost || 0);
+    renderCanvasOnly();
     scheduleAside();
     updateMobileBar();
     persistSoon();
-  }
-
-  function reorderBlock(dragId, targetId, before) {
-    if (!dragId || dragId === targetId) return;
-    const from = state.blocks.findIndex(function (b) { return b.id === dragId; });
-    if (from < 0) return;
-    const item = state.blocks.splice(from, 1)[0];
-    let to = state.blocks.findIndex(function (b) { return b.id === targetId; });
-    if (to < 0) to = state.blocks.length;
-    if (!before) to += 1;
-    state.blocks.splice(to, 0, item);
-    afterChange(true);
   }
 
   function setType(typeId) {
     if (!D.TYPES[typeId]) return;
     const base = D.presetState(typeId, D.TYPES[typeId].purposes[0].id);
     const keepBlocks = state.mode === 'blocks';
+    selectedBlockId = null;
     state = D.sanitize(Object.assign({}, base, {
       qty: state.qty,
       comment: state.comment,
@@ -1310,6 +1510,7 @@
     const p = D.PRESETS.find(function (x) { return x.id === id; });
     if (!p) return;
     const base = D.presetState(p.type, p.purpose);
+    selectedBlockId = null;
     state = D.sanitize(Object.assign({}, base, p.overrides || {}, { qty: 1 }));
     step = 6;
     renderAll();
@@ -1319,6 +1520,7 @@
 
   function resetState() {
     state = D.presetState(state.type, D.TYPES[state.type].purposes[0].id);
+    selectedBlockId = null;
     step = 1;
     try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* noop */ }
     renderAll();
@@ -1578,13 +1780,16 @@
     if (action === 'block-add') { addBlock(value); return; }
     if (action === 'block-del') { removeBlock(el.dataset.id); return; }
     if (action === 'block-dup') { duplicateBlock(el.dataset.id); return; }
-    if (action === 'block-up') { moveBlock(el.dataset.id, -1); return; }
-    if (action === 'block-down') { moveBlock(el.dataset.id, 1); return; }
     if (action === 'block-circuits-minus') { adjustBlockCircuits(el.dataset.id, -1); return; }
     if (action === 'block-circuits-plus') { adjustBlockCircuits(el.dataset.id, 1); return; }
     if (action === 'block-qty-minus') { adjustBlockQty(el.dataset.id, -1); return; }
     if (action === 'block-qty-plus') { adjustBlockQty(el.dataset.id, 1); return; }
     if (action === 'block-reset') { resetBlocks(); return; }
+    if (action === 'scroll-props') {
+      const props = $('#canvasProps');
+      if (props) props.scrollIntoView({ behavior: motionOK ? 'smooth' : 'auto', block: 'start' });
+      return;
+    }
     if (action === 'type') { if (state.type !== value) setType(value); return; }
     if (action === 'purpose') { if (state.purpose !== value) setPurpose(value); return; }
     if (action === 'type-jump') {
@@ -1642,7 +1847,7 @@
     document.addEventListener('input', function (e) {
       const el = e.target;
       if (el.matches('input[type="range"][data-bind]')) onRange(el);
-      if (el.matches('[data-block-length]')) onBlockLength(el);
+      if (el.matches('[data-canvas-length]')) onCanvasLength(el);
       if (el.matches('[data-trunk="length"]')) onTrunkLength(el);
       if (el.matches('[data-comment]')) {
         state.comment = el.value.slice(0, 500);
@@ -1673,49 +1878,137 @@
       }
     });
 
+    /* перетаскивание модуля из палитры на схему */
     document.addEventListener('dragstart', function (e) {
-      const grip = e.target.closest('[data-block-grip]');
-      if (!grip) return;
-      const card = grip.closest('[data-block]');
-      if (!card) return;
-      draggedBlockId = card.dataset.block;
-      card.classList.add('is-dragging');
+      const tile = e.target.closest('[data-palette-type]');
+      if (!tile) return;
+      paletteDragType = tile.dataset.paletteType;
+      tile.classList.add('is-dragging');
       if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = 'move';
-        try { e.dataTransfer.setData('text/plain', draggedBlockId); } catch (err) { /* noop */ }
-        try { e.dataTransfer.setDragImage(card, 30, 30); } catch (err) { /* noop */ }
+        e.dataTransfer.effectAllowed = 'copy';
+        try { e.dataTransfer.setData('text/plain', paletteDragType); } catch (err) { /* noop */ }
       }
     });
 
     document.addEventListener('dragend', function () {
-      draggedBlockId = null;
-      document.querySelectorAll('[data-block]').forEach(function (card) {
-        card.classList.remove('is-dragging', 'drag-over');
-      });
+      paletteDragType = null;
+      document.querySelectorAll('[data-palette-type].is-dragging').forEach(function (el) { el.classList.remove('is-dragging'); });
+      const wrap = $('#canvasWrap');
+      if (wrap) wrap.classList.remove('is-drop');
     });
 
     document.addEventListener('dragover', function (e) {
-      if (!draggedBlockId) return;
-      const card = e.target.closest('[data-block]');
-      if (!card) return;
+      if (!paletteDragType) return;
+      const wrap = e.target.closest('#canvasWrap');
+      if (!wrap) return;
       e.preventDefault();
-      document.querySelectorAll('[data-block].drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
-      card.classList.add('drag-over');
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      wrap.classList.add('is-drop');
+    });
+
+    document.addEventListener('dragleave', function (e) {
+      const wrap = e.target.closest('#canvasWrap');
+      if (!wrap) return;
+      if (!e.relatedTarget || !wrap.contains(e.relatedTarget)) wrap.classList.remove('is-drop');
     });
 
     document.addEventListener('drop', function (e) {
-      if (!draggedBlockId) return;
-      const card = e.target.closest('[data-block]');
-      if (!card) return;
+      if (!paletteDragType) return;
+      const wrap = e.target.closest('#canvasWrap');
+      if (!wrap) return;
       e.preventDefault();
-      const rect = card.getBoundingClientRect();
-      const before = e.clientY < rect.top + rect.height / 2;
-      const id = draggedBlockId;
-      draggedBlockId = null;
-      reorderBlock(id, card.dataset.block, before);
-      document.querySelectorAll('[data-block]').forEach(function (el) {
-        el.classList.remove('is-dragging', 'drag-over');
+      const stage = $('#canvasStage');
+      if (!stage) return;
+      const point = canvasPoint(stage, e.clientX, e.clientY);
+      const type = paletteDragType;
+      paletteDragType = null;
+      wrap.classList.remove('is-drop');
+      addBlock(type, point.x, point.y);
+    });
+
+    /* перетаскивание блока по схеме */
+    document.addEventListener('pointerdown', function (e) {
+      const group = e.target.closest('[data-cv-block]');
+      const stage = e.target.closest('#canvasStage');
+      if (!stage) return;
+      if (!group) {
+        selectedBlockId = null;
+        renderCanvasOnly();
+        renderCanvasPropsOnly();
+        scheduleAside();
+        return;
+      }
+      const block = findBlock(group.dataset.cvBlock);
+      if (!block) return;
+      e.preventDefault();
+      selectedBlockId = block.id;
+      nearestPortId = null;
+      renderCanvasOnly();
+      renderCanvasPropsOnly();
+      scheduleAside();
+      const point = canvasPoint(stage, e.clientX, e.clientY);
+      canvasDrag = {
+        id: block.id,
+        stage: stage,
+        offsetX: block.x - point.x,
+        offsetY: block.y - point.y,
+        moved: false,
+        startX: e.clientX,
+        startY: e.clientY
+      };
+      try { stage.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+    });
+
+    document.addEventListener('pointermove', function (e) {
+      if (!canvasDrag) return;
+      const block = findBlock(canvasDrag.id);
+      const stage = canvasDrag.stage;
+      if (!block || !stage) return;
+      const point = canvasPoint(stage, e.clientX, e.clientY);
+      if (Math.abs(e.clientX - canvasDrag.startX) + Math.abs(e.clientY - canvasDrag.startY) > 2) canvasDrag.moved = true;
+      block.x = Math.min(910, Math.max(90, point.x + canvasDrag.offsetX));
+      block.y = Math.min(D.CANVAS.maxY, Math.max(D.CANVAS.minY, point.y + canvasDrag.offsetY));
+      block.length = Math.max(0.5, Math.min(8, lengthFromGeometry(block)));
+      nearestPortId = null;
+      let bestPort = 60;
+      state.blocks.forEach(function (candidate) {
+        if (candidate.id === block.id || isBlockDescendant(candidate.id, block.id)) return;
+        const distance = Math.hypot(candidate.x - block.x, blockOuterY(candidate) - block.y);
+        if (distance < bestPort) {
+          bestPort = distance;
+          nearestPortId = candidate.id;
+        }
       });
+      renderCanvasOnly();
+      if (e.cancelable) e.preventDefault();
+    });
+
+    document.addEventListener('pointerup', function () {
+      if (!canvasDrag) return;
+      const drag = canvasDrag;
+      const block = findBlock(drag.id);
+      canvasDrag = null;
+      if (!block) return;
+      if (!drag.moved) {
+        nearestPortId = null;
+        renderCanvasOnly();
+        renderCanvasPropsOnly();
+        return;
+      }
+      if (nearestPortId && !isBlockDescendant(nearestPortId, block.id)) {
+        block.parentId = nearestPortId;
+      } else if (block.parentId && Math.abs(block.y - D.CANVAS.trunkY) < 80) {
+        block.parentId = null;
+      }
+      nearestPortId = null;
+      snapBlockGeometry(block);
+      syncBlocksAggregate();
+      afterChange(true);
+    });
+
+    document.addEventListener('pointercancel', function () {
+      canvasDrag = null;
+      nearestPortId = null;
     });
 
     document.addEventListener('submit', function (e) {
@@ -1734,10 +2027,16 @@
     }
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeMenu();
-      const grip = e.target.closest('[data-block-grip]');
-      if (grip && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const palette = e.target.closest('[data-palette-type]');
+      if (palette && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault();
-        moveBlock(grip.dataset.blockGrip, e.key === 'ArrowUp' ? -1 : 1);
+        addBlock(palette.dataset.paletteType);
+        return;
+      }
+      const group = e.target.closest('[data-cv-block]');
+      if (group && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        selectCanvasBlock(group.dataset.cvBlock);
       }
     });
 
