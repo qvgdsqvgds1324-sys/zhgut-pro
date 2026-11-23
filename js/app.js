@@ -601,7 +601,7 @@
       '<div class="field">' +
         '<div class="field-label"><span>' + (blocksMode ? 'Сечение магистрали' : 'Сечение жилы') + '</span><span class="field-hint">до 100 А на цепь</span></div>' +
         '<div class="opt-grid cols-5" role="group" aria-label="Сечение">' + sections + '</div>' +
-        (blocksMode ? '<p class="field-note">Сечения отдельных модулей задаются в шаге 2 — здесь выбирается магистраль и базовое сечение для новых блоков.</p>' : '') +
+        (blocksMode ? '<p class="field-note">Здесь выбирается сечение магистрали. Сечения отдельных модулей задаются в шаге 2 на карточках блоков.</p>' : '') +
       '</div>' +
       '<div class="field">' +
         '<div class="field-label"><span>Изоляция</span><span class="field-hint">температурный класс</span></div>' +
