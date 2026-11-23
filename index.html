@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЖГУТ.ПРО — конфигуратор жгутов для яхт, автодомов и автомобилей</title>
+<meta name="description" content="Соберите жгут онлайн: назначение, длина, цепи, провода, разъёмы и защита. Мгновенный расчёт цены, эскиз и спецификация для яхт, автодомов и автомобилей.">
+<meta name="theme-color" content="#0C1A24">
+<meta property="og:title" content="ЖГУТ.ПРО — жгуты под вашу технику">
+<meta property="og:description" content="Конфигуратор жгутов для яхт, автодомов и автомобилей: цена, состав и спецификация за пару минут.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='8' fill='%230C1A24'/%3E%3Cpath d='M8 12h12a4 4 0 0 1 0 8H8' fill='none' stroke='%23F6F3EC' stroke-width='2.6' stroke-linecap='round'/%3E%3Cpath d='M8 22h14a4 4 0 0 1 0 8h-8' fill='none' stroke='%23D98A52' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#configurator">Перейти к конфигуратору</a>
+
+<header class="site-head" id="siteHead">
+  <div class="wrap head-inner">
+    <a class="brand" href="#top" aria-label="ЖГУТ.ПРО — на главную">
+      <svg class="brand-mark" viewBox="0 0 36 36" width="36" height="36" fill="none" aria-hidden="true">
+        <path d="M7 11h13a5 5 0 0 1 0 10H7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <path d="M7 21h16a5 5 0 0 1 0 10H13" stroke="var(--copper)" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="7" cy="11" r="3" fill="currentColor"/>
+        <circle cx="13" cy="31" r="3" fill="var(--copper)"/>
+      </svg>
+      <span class="brand-text"><b>ЖГУТ<span>.ПРО</span></b><small>инженерные жгуты</small></span>
+    </a>
+    <nav class="site-nav" id="siteNav" aria-label="Основная навигация">
+      <a href="#types">Типы техники</a>
+      <a href="#configurator">Конфигуратор</a>
+      <a href="#presets">Готовые сборки</a>
+      <a href="#materials">Материалы</a>
+      <a href="#process">Процесс</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="head-actions">
+      <a class="head-phone" href="tel:+74951204590">+7 (495) 120-45-90</a>
+      <a class="btn btn-primary btn-small head-cta" href="#configurator">Рассчитать</a>
+      <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="siteNav" aria-label="Открыть меню">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <!-- ================= HERO ================= -->
+  <section class="hero" aria-labelledby="heroTitle">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow eyebrow-light"><span class="pulse-dot"></span> Производство жгутов · 12 / 24 / 48 В</p>
+        <h1 id="heroTitle">Жгуты под вашу технику — <em>без переделок</em> и сюрпризов</h1>
+        <p class="hero-lead">Яхта, автодом или автомобиль: соберите жгут в конфигураторе и сразу увидьте цену, состав и срок. Спецификация, схема и протокол испытаний — в комплекте.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#configurator">Собрать жгут
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <a class="btn btn-outline-light" href="#process">Как мы работаем</a>
+        </div>
+        <dl class="hero-stats">
+          <div><dt>15</dt><dd>готовых назначений</dd></div>
+          <div><dt>7–15</dt><dd>рабочих дней на заказ</dd></div>
+          <div><dt>100%</dt><dd>прозвонка и тест изоляции</dd></div>
+          <div><dt>24</dt><dd>месяца гарантии</dd></div>
+        </dl>
+      </div>
+
+      <div class="hero-art" aria-hidden="true">
+        <div class="hero-sheet">
+          <svg viewBox="0 0 560 430" class="hero-svg" role="img" aria-label="Эскиз жгута">
+            <defs>
+              <linearGradient id="heroCopper" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#8F4A24"/>
+                <stop offset=".52" stop-color="#E8B080"/>
+                <stop offset="1" stop-color="#B65F2C"/>
+              </linearGradient>
+            </defs>
+            <g fill="none" stroke="#E9E2D3" stroke-opacity=".22">
+              <rect x="16" y="16" width="528" height="398" rx="3"/>
+              <rect x="26" y="26" width="508" height="378" rx="2" stroke-opacity=".1"/>
+            </g>
+            <text x="36" y="48" class="hs-kicker">HARNESS LAYOUT · ЭСКИЗ</text>
+            <text x="524" y="48" text-anchor="end" class="hs-kicker">ZHP-Y-08024</text>
+            <line x1="36" y1="58" x2="524" y2="58" stroke="#E9E2D3" stroke-opacity=".14"/>
+
+            <!-- магистраль -->
+            <path d="M64 230H496" stroke="#DCE6EA" stroke-opacity=".12" stroke-width="24" stroke-linecap="round"/>
+            <path d="M64 230H496" stroke="#2F8F86" stroke-opacity=".16" stroke-width="18" stroke-linecap="round"/>
+            <path d="M64 230H496" stroke="url(#heroCopper)" stroke-width="3" stroke-linecap="round"/>
+            <path class="hero-pulse" d="M64 230H496" stroke="#FFD9B0" stroke-width="2.4" stroke-dasharray="2 36" stroke-linecap="round"/>
+
+            <!-- ветви -->
+            <g class="hs-branch">
+              <path d="M150 230V138" stroke="#DCE6EA" stroke-opacity=".12" stroke-width="14" stroke-linecap="round"/>
+              <path d="M150 230V138" stroke="#2F8F86" stroke-opacity=".16" stroke-width="10" stroke-linecap="round"/>
+              <path d="M150 230V138" stroke="url(#heroCopper)" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M318 230V118" stroke="#DCE6EA" stroke-opacity=".12" stroke-width="14" stroke-linecap="round"/>
+              <path d="M318 230V118" stroke="#2F8F86" stroke-opacity=".16" stroke-width="10" stroke-linecap="round"/>
+              <path d="M318 230V118" stroke="url(#heroCopper)" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M230 230V314" stroke="#DCE6EA" stroke-opacity=".12" stroke-width="14" stroke-linecap="round"/>
+              <path d="M230 230V314" stroke="#2F8F86" stroke-opacity=".16" stroke-width="10" stroke-linecap="round"/>
+              <path d="M230 230V314" stroke="url(#heroCopper)" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M402 230V318" stroke="#DCE6EA" stroke-opacity=".12" stroke-width="14" stroke-linecap="round"/>
+              <path d="M402 230V318" stroke="#2F8F86" stroke-opacity=".16" stroke-width="10" stroke-linecap="round"/>
+              <path d="M402 230V318" stroke="url(#heroCopper)" stroke-width="1.8" stroke-linecap="round"/>
+            </g>
+            <g fill="#E8B080">
+              <circle cx="150" cy="230" r="4"/><circle cx="230" cy="230" r="4"/>
+              <circle cx="318" cy="230" r="4"/><circle cx="402" cy="230" r="4"/>
+            </g>
+
+            <!-- разъёмы -->
+            <g class="hs-conn">
+              <rect x="47" y="221" width="34" height="18" rx="4" fill="#0C1A24" stroke="#E8B080" stroke-width="1.3"/>
+              <rect x="479" y="221" width="34" height="18" rx="4" fill="#0C1A24" stroke="#E8B080" stroke-width="1.3"/>
+              <rect x="133" y="129" width="34" height="18" rx="4" fill="#0C1A24" stroke="#E8B080" stroke-width="1.3"/>
+              <rect x="301" y="109" width="34" height="18" rx="4" fill="#0C1A24" stroke="#E8B080" stroke-width="1.3"/>
+              <rect x="213" y="305" width="34" height="18" rx="4" fill="#0C1A24" stroke="#E8B080" stroke-width="1.3"/>
+              <rect x="385" y="309" width="34" height="18" rx="4" fill="#0C1A24" stroke="#E8B080" stroke-width="1.3"/>
+            </g>
+            <g fill="#E8B080">
+              <circle cx="56" cy="230" r="1.4"/><circle cx="64" cy="230" r="1.4"/><circle cx="72" cy="230" r="1.4"/>
+              <circle cx="488" cy="230" r="1.4"/><circle cx="496" cy="230" r="1.4"/><circle cx="504" cy="230" r="1.4"/>
+              <circle cx="142" cy="138" r="1.4"/><circle cx="150" cy="138" r="1.4"/><circle cx="158" cy="138" r="1.4"/>
+              <circle cx="310" cy="118" r="1.4"/><circle cx="318" cy="118" r="1.4"/><circle cx="326" cy="118" r="1.4"/>
+              <circle cx="222" cy="314" r="1.4"/><circle cx="230" cy="314" r="1.4"/><circle cx="238" cy="314" r="1.4"/>
+              <circle cx="394" cy="318" r="1.4"/><circle cx="402" cy="318" r="1.4"/><circle cx="410" cy="318" r="1.4"/>
+            </g>
+            <g class="hs-label">
+              <text x="64" y="212" text-anchor="middle">X1</text>
+              <text x="496" y="212" text-anchor="middle">X2</text>
+              <text x="150" y="120" text-anchor="middle">X3</text>
+              <text x="318" y="100" text-anchor="middle">X4</text>
+              <text x="230" y="337" text-anchor="middle">X5</text>
+              <text x="402" y="341" text-anchor="middle">X6</text>
+            </g>
+            <g class="hs-note">
+              <path d="M84 88h54" stroke="#E8B080" stroke-opacity=".5"/>
+              <text x="84" y="80">DEUTSCH DT · IP67</text>
+              <path d="M392 84h72" stroke="#E8B080" stroke-opacity=".5"/>
+              <text x="464" y="80" text-anchor="end">FLRY-B 1,5</text>
+              <path d="M96 356h58" stroke="#E8B080" stroke-opacity=".5"/>
+              <text x="96" y="348">ЛУЖЁНАЯ МЕДЬ</text>
+            </g>
+
+            <!-- размер -->
+            <g stroke="#8FA3AD" stroke-opacity=".55">
+              <path d="M64 382H496"/>
+              <path d="M64 375v14M496 375v14"/>
+              <path d="M64 382l10-4v8zM496 382l-10-4v8z" fill="#8FA3AD" stroke="none" fill-opacity=".7"/>
+            </g>
+            <text x="280" y="374" text-anchor="middle" class="hs-dim">L = 8 000 мм</text>
+            <g class="hs-note">
+              <text x="36" y="404">ЖГУТ.ПРО · 2026</text>
+              <text x="524" y="404" text-anchor="end">ЭСКИЗ · НЕ ДЛЯ ПРОИЗВОДСТВА</text>
+            </g>
+          </svg>
+        </div>
+        <span class="art-tag art-tag-1">Deutsch DT · 12 pin</span>
+        <span class="art-tag art-tag-2">IP67</span>
+        <span class="art-tag art-tag-3">FLRY-B · 1,5 мм²</span>
+      </div>
+    </div>
+    <div class="hero-fade" aria-hidden="true"></div>
+  </section>
+
+  <!-- ================= TYPES ================= -->
+  <section class="section types" id="types" aria-labelledby="typesTitle">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Типы техники</p>
+          <h2 id="typesTitle">Один стандарт — три среды</h2>
+        </div>
+        <p>Морская соль, дорожная вибрация и тепло моторного отсека требуют разного. Конфигуратор учитывает это в материалах, защите и коэффициентах.</p>
+      </div>
+      <div class="type-grid" id="typeCards"></div>
+    </div>
+  </section>
+
+  <!-- ================= CONFIGURATOR ================= -->
+  <section class="section config" id="configurator" aria-labelledby="configTitle">
+    <div class="wrap">
+      <div class="section-head config-head">
+        <div>
+          <p class="eyebrow">Конфигуратор</p>
+          <h2 id="configTitle">Соберите жгут за 6 шагов</h2>
+        </div>
+        <div class="config-head-right">
+          <p>Меняйте параметры — цена, эскиз и состав обновляются сразу. В конце скачайте спецификацию или отправьте расчёт инженеру.</p>
+          <ul class="mini-badges" aria-label="Преимущества конфигуратора">
+            <li>Без регистрации</li>
+            <li>Цена сразу</li>
+            <li>Спецификация в файл</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="stepper" id="stepper" role="tablist" aria-label="Шаги конфигуратора"></div>
+
+      <div class="config-grid">
+        <div class="config-panel" id="configPanel"></div>
+        <aside class="config-aside" id="configAside" aria-label="Предварительный расчёт"></aside>
+      </div>
+
+      <div class="config-note">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d="M12 3l7 3v5c0 4.4-3 8.2-7 10-4-1.8-7-5.6-7-10V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p><b>Это предварительная оценка, не оферта.</b> Точную цену фиксируем после проверки ТЗ. Схема, спецификация и протокол испытаний включаются в опциях.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PRESETS ================= -->
+  <section class="section presets" id="presets" aria-labelledby="presetsTitle">
+    <div class="wrap">
+      <div class="section-head section-head-light">
+        <div>
+          <p class="eyebrow eyebrow-light">Готовые сборки</p>
+          <h2 id="presetsTitle">Начните с типового решения</h2>
+        </div>
+        <p>Три частых запроса. Загрузите как основу — и поправьте длину, цепи или материалы под свой проект.</p>
+      </div>
+      <div class="preset-grid" id="presetCards"></div>
+    </div>
+  </section>
+
+  <!-- ================= MATERIALS ================= -->
+  <section class="section materials" id="materials" aria-labelledby="materialsTitle">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Материалы и контроль</p>
+          <h2 id="materialsTitle">Не «провод в гофре», а инженерное изделие</h2>
+        </div>
+        <p>Каждый жгут собирается по схеме, а не по памяти. Материалы подбираются под среду, а не «что было на складе».</p>
+      </div>
+      <div class="material-grid">
+        <article class="material-card">
+          <div class="mc-top"><span class="mc-num">01</span>
+            <svg viewBox="0 0 48 48" width="44" height="44" fill="none" aria-hidden="true"><path d="M6 14h14a7 7 0 0 1 0 14H10a7 7 0 0 0 0 14h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="6" cy="14" r="3" fill="var(--copper)"/><circle cx="26" cy="42" r="3" fill="var(--copper)"/></svg>
+          </div>
+          <h3>Провод и изоляция</h3>
+          <p>FLRY-B, XLPE, силикон или PUR. Лужёная медь для влажных зон, термостойкость до +180 °C, стойкость к маслу и УФ.</p>
+          <ul class="mc-list"><li>ISO 6722 / FLRY-B</li><li>−60…+180 °C</li><li>Сечение 0,5–25 мм²</li></ul>
+        </article>
+        <article class="material-card">
+          <div class="mc-top"><span class="mc-num">02</span>
+            <svg viewBox="0 0 48 48" width="44" height="44" fill="none" aria-hidden="true"><rect x="5" y="17" width="16" height="14" rx="3" stroke="currentColor" stroke-width="1.8"/><rect x="27" y="17" width="16" height="14" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M21 21h6M21 24h6M21 27h6" stroke="var(--copper)" stroke-width="1.8"/><path d="M11 17v-4M37 17v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </div>
+          <h3>Разъёмы и контакты</h3>
+          <p>Deutsch DT/DTM, Superseal, MX150, M12, Anderson SB50. Обжим калиброванным инструментом с контролем усилия и вырывом.</p>
+          <ul class="mc-list"><li>Оригинальные серии</li><li>IP54–IP68</li><li>Контроль обжима</li></ul>
+        </article>
+        <article class="material-card">
+          <div class="mc-top"><span class="mc-num">03</span>
+            <svg viewBox="0 0 48 48" width="44" height="44" fill="none" aria-hidden="true"><path d="M24 5l15 6v11c0 10-6.6 18.4-15 21-8.4-2.6-15-11-15-21V11l15-6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M17 24l5 5 9-10" stroke="var(--copper)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Защита и герметизация</h3>
+          <p>Гофра ПЭ/ПУ, плетёная оплётка, спираль, термоусадка с клеевым слоем. Заглушки на свободных пинах и уплотнения на вводах.</p>
+          <ul class="mc-list"><li>Гофра и оплётка</li><li>IP54–IP68</li><li>Антифрикционные рукава</li></ul>
+        </article>
+        <article class="material-card">
+          <div class="mc-top"><span class="mc-num">04</span>
+            <svg viewBox="0 0 48 48" width="44" height="44" fill="none" aria-hidden="true"><rect x="10" y="7" width="28" height="36" rx="4" stroke="currentColor" stroke-width="1.8"/><path d="M17 16h14M17 23h14M17 30h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M29 33l3 3 5-6" stroke="var(--copper)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Испытания и документы</h3>
+          <p>Прозвонка 100% цепей, тест сопротивления изоляции, проверка полярности. Протокол, схема, pinout и паспорт изделия.</p>
+          <ul class="mc-list"><li>Прозвонка 100%</li><li>Тест изоляции</li><li>Фотоотчёт</li></ul>
+        </article>
+      </div>
+
+      <ul class="check-strip" aria-label="Что входит в каждый жгут">
+        <li><span class="check-ico"></span>Маркировка W-кода на обоих концах</li>
+        <li><span class="check-ico"></span>Запас длины и сервисные петли</li>
+        <li><span class="check-ico"></span>Схема и pinout в комплекте</li>
+        <li><span class="check-ico"></span>Фотоотчёт перед отгрузкой</li>
+        <li><span class="check-ico"></span>Протокол испытаний</li>
+        <li><span class="check-ico"></span>Гарантия 24 месяца</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= PROCESS ================= -->
+  <section class="section process" id="process" aria-labelledby="processTitle">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Как это работает</p>
+          <h2 id="processTitle">От заявки до отгрузки — 4 шага</h2>
+        </div>
+        <p>Срок зависит от партии и сложности. Типовой заказ — 10–14 рабочих дней, срочный запуск — от 5 дней при наличии материалов.</p>
+      </div>
+      <ol class="process-grid">
+        <li class="process-step">
+          <div class="ps-head"><span class="ps-num">01</span><span class="ps-time">1 день</span></div>
+          <h3>Заявка и ТЗ</h3>
+          <p>Присылаете схему, образец или список потребителей. Уточняем токи, разъёмы, длины и условия эксплуатации.</p>
+        </li>
+        <li class="process-step">
+          <div class="ps-head"><span class="ps-num">02</span><span class="ps-time">2–3 дня</span></div>
+          <h3>Проект и цена</h3>
+          <p>Собираем pinout, подбираем сечения и защиту, согласуем смету. Фиксируем цену, срок и состав комплекта.</p>
+        </li>
+        <li class="process-step">
+          <div class="ps-head"><span class="ps-num">03</span><span class="ps-time">5–10 дней</span></div>
+          <h3>Производство</h3>
+          <p>Разделка, обжим, сборка, маркировка и укладка в рукав. Присылаем фотоотчёт на промежуточном этапе.</p>
+        </li>
+        <li class="process-step">
+          <div class="ps-head"><span class="ps-num">04</span><span class="ps-time">1–2 дня</span></div>
+          <h3>Испытания и отгрузка</h3>
+          <p>Прозвонка, тест изоляции, проверка полярности и упаковка. Документы и трек-номер — в день отгрузки.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section class="section faq" id="faq" aria-labelledby="faqTitle">
+    <div class="wrap faq-grid">
+      <div class="faq-intro">
+        <p class="eyebrow">Вопросы</p>
+        <h2 id="faqTitle">Что обычно спрашивают</h2>
+        <p>Не нашли ответ? Напишите — инженер ответит по вашей задаче, а не шаблоном из скрипта.</p>
+        <a class="faq-mail" href="mailto:hello@zhgut.pro">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          hello@zhgut.pro
+        </a>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>Насколько точна цена в конфигураторе?</summary>
+          <p>Это предварительная оценка по прайсу: материалы, работа, разъёмы и опции. После проверки ТЗ цена может уточниться на ±10–15%, обычно в сторону детализации, а не сюрприза. Для типовых конфигураций она близка к финальной.</p>
+        </details>
+        <details>
+          <summary>Можете повторить существующий жгут?</summary>
+          <p>Да. Пришлите образец, фото разъёмов или схему — восстановим pinout, подберём аналоги и соберём замену. Если есть оригинальный номер — используем его как ориентир.</p>
+        </details>
+        <details>
+          <summary>Какие разъёмы есть в наличии?</summary>
+          <p>Deutsch DT/DTM, Superseal 1.5, Molex MX150, M12, Anderson SB50 и наконечники. Под заказ — ваши серии, в том числе импортные. Наличие уточняем на дату заказа.</p>
+        </details>
+        <details>
+          <summary>Сколько стоит минимальная партия?</summary>
+          <p>От одной штуки. Серийные партии 10+ и 25+ дешевле за счёт закупки и наладки: скидки уже заложены в конфигураторе. Для серии можем держать модули на складе.</p>
+        </details>
+        <details>
+          <summary>Что входит в комплект документов?</summary>
+          <p>Схема соединений, спецификация, таблица проводов и pinout, протокол испытаний, паспорт изделия. По запросу — монтажная инструкция и маркировочная схема.</p>
+        </details>
+        <details>
+          <summary>Работаете с юрлицами?</summary>
+          <p>Да, с НДС и без, по договору. Готовим КП, счёт и закрывающие документы. Для физлиц — оплата картой или переводом, отправка транспортной компанией.</p>
+        </details>
+        <details>
+          <summary>Как обеспечиваете герметичность?</summary>
+          <p>Герметичные серии разъёмов, уплотнения, заглушки свободных пинов, термоусадка с клеевым слоем. Для IP68 — заливка или уплотнение по согласованной технологии, с проверкой.</p>
+        </details>
+        <details>
+          <summary>Можно ускорить заказ?</summary>
+          <p>Да, срочный запуск от 5 рабочих дней при наличии материалов. Наценка и реальный срок зависят от загрузки производства — скажем сразу, без обещаний «завтра».</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CONTACTS ================= -->
+  <section class="section cta" id="contacts" aria-labelledby="ctaTitle">
+    <div class="wrap cta-grid">
+      <div class="cta-copy">
+        <p class="eyebrow eyebrow-light">Контакты</p>
+        <h2 id="ctaTitle">Нужен жгут, которого нет в шаблоне?</h2>
+        <p>Пришлите схему, фото разъёмов или список потребителей. Инженер посмотрит задачу и вернётся с вариантом и ценой в течение рабочего дня.</p>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="mailto:hello@zhgut.pro?subject=%D0%97%D0%B0%D0%BF%D1%80%D0%BE%D1%81%20%D0%BD%D0%B0%20%D0%B6%D0%B3%D1%83%D1%82">Отправить ТЗ</a>
+          <a class="btn btn-outline-light" href="tel:+74951204590">Позвонить</a>
+        </div>
+      </div>
+      <div class="contact-grid">
+        <a class="contact-card" href="tel:+74951204590">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><path d="M6 3h3l2 5-2 1.5a12 12 0 0 0 5.5 5.5L16 13l5 2v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4 5.2 2 2 0 0 1 6 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <span>Телефон</span><b>+7 (495) 120-45-90</b><small>Пн–Пт, 9:00–18:00</small>
+        </a>
+        <a class="contact-card" href="mailto:hello@zhgut.pro">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Почта</span><b>hello@zhgut.pro</b><small>Ответим в течение дня</small>
+        </a>
+        <div class="contact-card">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.5" stroke="currentColor" stroke-width="1.6"/></svg>
+          <span>Производство</span><b>Москва</b><small>ул. Складочная, 1, стр. 18</small>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <a class="brand brand-foot" href="#top" aria-label="ЖГУТ.ПРО — на главную">
+        <svg class="brand-mark" viewBox="0 0 36 36" width="34" height="34" fill="none" aria-hidden="true">
+          <path d="M7 11h13a5 5 0 0 1 0 10H7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M7 21h16a5 5 0 0 1 0 10H13" stroke="var(--copper-light)" stroke-width="2.6" stroke-linecap="round"/>
+          <circle cx="7" cy="11" r="3" fill="currentColor"/>
+          <circle cx="13" cy="31" r="3" fill="var(--copper-light)"/>
+        </svg>
+        <span class="brand-text"><b>ЖГУТ<span>.ПРО</span></b><small>инженерные жгуты</small></span>
+      </a>
+      <p>Жгуты для яхт, автодомов и автомобилей. Проектирование, сборка, испытания и документация — в одном месте.</p>
+    </div>
+    <nav class="foot-col" aria-label="Разделы сайта">
+      <b>Сайт</b>
+      <a href="#types">Типы техники</a>
+      <a href="#configurator">Конфигуратор</a>
+      <a href="#presets">Готовые сборки</a>
+      <a href="#materials">Материалы</a>
+    </nav>
+    <nav class="foot-col" aria-label="Информация">
+      <b>Информация</b>
+      <a href="#process">Процесс</a>
+      <a href="#faq">FAQ</a>
+      <a href="#contacts">Контакты</a>
+      <a href="mailto:hello@zhgut.pro?subject=%D0%97%D0%B0%D0%BF%D1%80%D0%BE%D1%81%20%D0%BD%D0%B0%20%D0%B6%D0%B3%D1%83%D1%82">Запрос на жгут</a>
+    </nav>
+    <div class="foot-col foot-contacts">
+      <b>Контакты</b>
+      <a href="tel:+74951204590">+7 (495) 120-45-90</a>
+      <a href="mailto:hello@zhgut.pro">hello@zhgut.pro</a>
+      <span>Москва, ул. Складочная, 1, стр. 18</span>
+      <span>Пн–Пт, 9:00–18:00</span>
+    </div>
+  </div>
+  <div class="wrap foot-bottom">
+    <span>© <span id="year">2026</span> ЖГУТ.ПРО. Все права защищены.</span>
+    <span>Цены на сайте — предварительная оценка, не публичная оферта.</span>
+    <a href="#top">Наверх ↑</a>
+  </div>
+</footer>
+
+<div class="mobile-bar" id="mobileBar"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="print-sheet" id="printSheet"></div>
+
+<script src="js/data.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

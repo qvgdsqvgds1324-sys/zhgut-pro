@@ -1,0 +1,1191 @@
+/* ============================================================
+   ЖГУТ.ПРО — интерфейс конфигуратора
+   ============================================================ */
+(function () {
+  'use strict';
+
+  const D = window.HARNESS_DATA;
+  const C = window.HARNESS_CALC;
+  const $ = function (sel, root) { return (root || document).querySelector(sel); };
+  const $$ = function (sel, root) { return Array.from((root || document).querySelectorAll(sel)); };
+
+  const STORAGE_KEY = 'zhgutpro:cfg:v1';
+  const STEPS = [
+    { name: 'Техника', short: 'Техника' },
+    { name: 'Параметры', short: 'Параметры' },
+    { name: 'Провода', short: 'Провода' },
+    { name: 'Разъёмы', short: 'Разъёмы' },
+    { name: 'Опции', short: 'Опции' },
+    { name: 'Итог', short: 'Итог' }
+  ];
+
+  const numFmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
+  const intFmt = new Intl.NumberFormat('ru-RU');
+  const motionOK = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function money(v) { return C.formatMoney(v); }
+  function num(v) { return numFmt.format(v); }
+  function int(v) { return intFmt.format(v); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function plural(n, one, few, many) {
+    const n10 = n % 10;
+    const n100 = n % 100;
+    if (n10 === 1 && n100 !== 11) return one;
+    if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return few;
+    return many;
+  }
+  function circuitsWord(n) { return plural(n, 'цепь', 'цепи', 'цепей'); }
+  function branchesWord(n) { return plural(n, 'ветвь', 'ветви', 'ветвей'); }
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  /* ---------- иконки ---------- */
+  const TYPE_ICONS = {
+    yacht: '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 42h50l-8 10H15L7 42z"/><path d="M32 7v35"/><path d="M32 11 15 37h17"/><path d="M37 20l13 17H37"/><path d="M4 58h56"/></svg>',
+    camper: '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 45V25a4 4 0 0 1 4-4h27l8 9h10a4 4 0 0 1 4 4v11"/><path d="M5 45h54"/><path d="M46 21v10h12"/><rect x="11" y="27" width="13" height="9" rx="1.5"/><circle cx="17" cy="49" r="5"/><circle cx="47" cy="49" r="5"/></svg>',
+    car: '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 41v-7l7-2 7-12h20l8 12 9 2v7"/><path d="M6 41h52"/><circle cx="18" cy="44" r="5"/><circle cx="47" cy="44" r="5"/><path d="M23 20l-4 12h13V20M37 20v12h13l-5-12"/></svg>'
+  };
+  const TYPE_SHORT = {
+    yacht: 'соль, влага, УФ',
+    camper: 'жилая зона и шасси',
+    car: 'моторный отсек и салон'
+  };
+  const ENV_ICONS = {
+    dry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>',
+    damp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5S6 10.2 6 14a6 6 0 0 0 12 0c0-3.8-6-10.5-6-10.5z"/><path d="M9.5 14.5a2.6 2.6 0 0 0 2.5 2.4"/></svg>',
+    engine: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2s1.5 4-1.5 7S9 14 12 16c-4 0-7-2.5-7-6 0-2 1-3.5 1-3.5S4 8 4 11a8 8 0 0 0 16 0c0-5-7-9-7-9z"/></svg>',
+    bilge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 9c2 0 2 2 4 2s2-2 4-2 2 2 4 2 2-2 4-2 2 2 4 2"/><path d="M2 15c2 0 2 2 4 2s2-2 4-2 2 2 4 2 2-2 4-2 2 2 4 2"/></svg>'
+  };
+
+  /* ---------- состояние ---------- */
+  let state;
+  let step = 1;
+  let lastResult;
+  let lastLead = null;
+  let toastTimer = null;
+  let persistTimer = null;
+  let asideRaf = 0;
+
+  function encodeState(s) {
+    const bytes = new TextEncoder().encode(JSON.stringify(s));
+    let bin = '';
+    bytes.forEach(function (b) { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function decodeState(str) {
+    const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64 + '='.repeat((4 - b64.length % 4) % 4));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  function clampStep(n) {
+    n = Number(n);
+    return n >= 1 && n <= 6 ? n : 1;
+  }
+
+  function loadInitial() {
+    const hash = window.location.hash || '';
+    const match = hash.match(/#cfg=([A-Za-z0-9_-]+)/);
+    if (match) {
+      try {
+        return { state: D.sanitize(JSON.parse(decodeState(match[1]))), step: 6 };
+      } catch (err) { /* повреждённая ссылка — стартуем с сохранения */ }
+    }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { state: D.sanitize(parsed.state), step: clampStep(parsed.step) };
+      }
+    } catch (err) { /* localStorage может быть запрещён */ }
+    return { state: D.presetState('yacht', 'y-main'), step: 1 };
+  }
+
+  function persist() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ state: state, step: step }));
+    } catch (err) { /* noop */ }
+  }
+
+  function persistSoon() {
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(persist, 280);
+  }
+
+  /* ---------- toast / меню ---------- */
+  function toast(message) {
+    const el = $('#toast');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add('is-visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('is-visible'); }, 3400);
+  }
+
+  function closeMenu() {
+    document.body.classList.remove('menu-open');
+    const btn = $('#navToggle');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
+  function scrollToConfig() {
+    const el = $('#configurator');
+    if (!el) return;
+    const y = el.getBoundingClientRect().top + window.scrollY - 88;
+    window.scrollTo({ top: y, behavior: motionOK ? 'smooth' : 'auto' });
+  }
+
+  function scrollToForm() {
+    if (step !== 6) {
+      step = 6;
+      renderStep();
+      syncStepper();
+      renderAside();
+      updateMobileBar();
+      persist();
+    }
+    setTimeout(function () {
+      const lead = $('#lead');
+      if (lead) lead.scrollIntoView({ behavior: motionOK ? 'smooth' : 'auto', block: 'start' });
+    }, 90);
+  }
+
+  /* ---------- цены «от» ---------- */
+  function typicalPrice(typeId, purposeId) {
+    return C.calc(D.presetState(typeId, purposeId), D).priceOne;
+  }
+
+  /* ---------- лендинг: карточки техники ---------- */
+  function renderTypeCards() {
+    const host = $('#typeCards');
+    if (!host) return;
+    host.innerHTML = Object.keys(D.TYPES).map(function (id, index) {
+      const t = D.TYPES[id];
+      const min = Math.min.apply(null, t.purposes.map(function (p) { return typicalPrice(t.id, p.id); }));
+      const extra = t.purposes.length - 3;
+      return '<article class="type-card" style="--tc:' + t.accent + '">' +
+        '<div class="type-card-top"><span class="type-index">' + pad2(index + 1) + '</span>' + TYPE_ICONS[t.id] + '</div>' +
+        '<h3>' + t.name + '</h3>' +
+        '<p>' + t.desc + '</p>' +
+        '<ul class="type-list">' +
+          t.purposes.slice(0, 3).map(function (p) { return '<li>' + p.name + '</li>'; }).join('') +
+          (extra > 0 ? '<li class="more">и ещё ' + extra + ' ' + plural(extra, 'назначение', 'назначения', 'назначений') + '</li>' : '') +
+        '</ul>' +
+        '<div class="type-foot">' +
+          '<div class="type-from"><span>расчёт от</span><b>' + money(min) + '</b></div>' +
+          '<button type="button" class="btn btn-ghost btn-small" data-action="type-jump" data-value="' + t.id + '">Настроить →</button>' +
+        '</div>' +
+      '</article>';
+    }).join('');
+  }
+
+  /* ---------- лендинг: пресеты ---------- */
+  function renderPresets() {
+    const host = $('#presetCards');
+    if (!host) return;
+    host.innerHTML = D.PRESETS.map(function (p) {
+      const base = D.presetState(p.type, p.purpose);
+      const seeded = D.sanitize(Object.assign({}, base, p.overrides || {}, { qty: 1 }));
+      const r = C.calc(seeded, D);
+      return '<article class="preset-card' + (p.featured ? ' is-featured' : '') + '">' +
+        '<div class="preset-top"><span class="preset-badge">' + p.badge + '</span><span class="preset-code">' + r.code + '</span></div>' +
+        '<h3>' + p.title + '</h3>' +
+        '<p>' + p.desc + '</p>' +
+        '<ul class="chips">' + p.chips.map(function (c) { return '<li>' + c + '</li>'; }).join('') + '</ul>' +
+        '<div class="preset-foot">' +
+          '<div><span>предварительно</span><b>≈ ' + money(r.priceOne) + '</b></div>' +
+          '<button type="button" class="btn btn-primary btn-small" data-action="preset" data-value="' + p.id + '">Загрузить</button>' +
+        '</div>' +
+      '</article>';
+    }).join('');
+  }
+
+  /* ---------- шаги ---------- */
+  function renderStepper() {
+    const host = $('#stepper');
+    if (!host) return;
+    host.innerHTML = STEPS.map(function (s, i) {
+      const n = i + 1;
+      return '<button type="button" class="step" role="tab" data-action="step" data-step="' + n + '" aria-label="Шаг ' + n + ': ' + s.name + '">' +
+        '<span class="step-num">' + pad2(n) + '</span><span class="step-name">' + s.short + '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function syncStepper() {
+    $$('#stepper .step').forEach(function (btn) {
+      const n = Number(btn.dataset.step);
+      btn.classList.toggle('is-active', n === step);
+      btn.classList.toggle('is-done', n < step);
+      btn.setAttribute('aria-selected', n === step ? 'true' : 'false');
+      if (n === step) btn.setAttribute('aria-current', 'step');
+      else btn.removeAttribute('aria-current');
+    });
+  }
+
+  function optButton(o) {
+    return '<button type="button" class="opt ' + (o.on ? 'is-on ' : '') + (o.className || '') + '"' +
+      ' data-action="' + o.action + '" data-value="' + o.value + '" aria-pressed="' + (o.on ? 'true' : 'false') + '">' +
+      '<span class="opt-check" aria-hidden="true"></span>' +
+      '<span class="opt-name">' + o.name + '</span>' +
+      (o.desc ? '<span class="opt-desc">' + o.desc + '</span>' : '') +
+      (o.meta ? '<span class="opt-meta">' + o.meta + '</span>' : '') +
+    '</button>';
+  }
+
+  function rangeField(o) {
+    const pct = ((o.value - o.min) / (o.max - o.min) * 100).toFixed(1);
+    return '<div class="field">' +
+      '<div class="field-label-row">' +
+        '<label class="field-label" for="range-' + o.key + '">' + o.label + '</label>' +
+        '<output class="range-out" for="range-' + o.key + '" data-out="' + o.key + '">' + o.text(o.value) + '</output>' +
+      '</div>' +
+      '<input class="range" id="range-' + o.key + '" type="range" min="' + o.min + '" max="' + o.max + '" step="' + o.step + '" value="' + o.value + '" data-bind="' + o.key + '" style="--p:' + pct + '%" aria-label="' + o.label + '" aria-valuetext="' + o.text(o.value) + '">' +
+      '<div class="range-scale">' + o.marks.map(function (m) { return '<span>' + m + '</span>'; }).join('') + '</div>' +
+    '</div>';
+  }
+
+  function stepNav() {
+    const last = step === 6;
+    return '<div class="step-nav">' +
+      (step > 1 ? '<button type="button" class="btn btn-ghost" data-action="back">← Назад</button>' : '<span></span>') +
+      '<span class="step-count">Шаг ' + step + ' из 6</span>' +
+      (last
+        ? '<button type="button" class="btn btn-primary" data-action="to-form">Оставить заявку →</button>'
+        : '<button type="button" class="btn btn-primary" data-action="next">' + (step === 5 ? 'Показать расчёт' : 'Далее') + ' →</button>') +
+    '</div>';
+  }
+
+  function renderStep() {
+    const panel = $('#configPanel');
+    if (!panel) return;
+    const renderers = [renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6];
+    panel.innerHTML = renderers[step - 1]();
+  }
+
+  /* шаг 1 */
+  function renderStep1() {
+    const t = D.TYPES[state.type];
+    const typeTiles = Object.keys(D.TYPES).map(function (id) {
+      const tt = D.TYPES[id];
+      return '<button type="button" class="type-tile ' + (state.type === id ? 'is-on' : '') + '" data-action="type" data-value="' + id + '" aria-pressed="' + (state.type === id ? 'true' : 'false') + '">' +
+        '<span class="tt-icon">' + TYPE_ICONS[id] + '</span>' +
+        '<span class="tt-body"><b>' + tt.name + '</b><small>' + TYPE_SHORT[id] + '</small></span>' +
+      '</button>';
+    }).join('');
+
+    const purposes = t.purposes.map(function (p) {
+      return '<button type="button" class="opt purpose ' + (state.purpose === p.id ? 'is-on' : '') + '" data-action="purpose" data-value="' + p.id + '" aria-pressed="' + (state.purpose === p.id ? 'true' : 'false') + '">' +
+        '<span class="opt-check" aria-hidden="true"></span>' +
+        '<span class="opt-name">' + p.name + '</span>' +
+        '<span class="opt-desc">' + p.desc + '</span>' +
+        '<span class="opt-meta">' + p.circuits + ' ' + circuitsWord(p.circuits) + ' · ' + num(p.length) + ' м · ' + p.voltage + ' В</span>' +
+      '</button>';
+    }).join('');
+
+    const voltages = [12, 24, 48].map(function (v) {
+      return '<button type="button" class="' + (state.voltage === v ? 'is-on' : '') + '" data-action="voltage" data-value="' + v + '" aria-pressed="' + (state.voltage === v ? 'true' : 'false') + '">' + v + ' В</button>';
+    }).join('');
+
+    const qtys = D.QTY_OPTIONS.map(function (q) {
+      return '<button type="button" class="' + (state.qty === q.value ? 'is-on' : '') + '" data-action="qty" data-value="' + q.value + '" aria-pressed="' + (state.qty === q.value ? 'true' : 'false') + '">' + q.value +
+        (q.discount ? '<small>−' + Math.round(q.discount * 100) + '%</small>' : '') + '</button>';
+    }).join('');
+
+    return '<div class="step-head">' +
+        '<p class="step-kicker">Шаг 1 · Техника</p>' +
+        '<h3>Что за техника и какой жгут?</h3>' +
+        '<p class="step-lead">Выберите тип — подставим типовые параметры и условия эксплуатации. Всё можно изменить на следующих шагах.</p>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label">Тип техники</div>' +
+        '<div class="type-tiles" role="group" aria-label="Тип техники">' + typeTiles + '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label"><span>Назначение жгута</span><span class="field-hint">' + t.purposes.length + ' вариантов</span></div>' +
+        '<div class="purpose-grid" role="group" aria-label="Назначение жгута">' + purposes + '</div>' +
+      '</div>' +
+      '<div class="field-two">' +
+        '<div class="field">' +
+          '<div class="field-label">Напряжение бортсети</div>' +
+          '<div class="seg" role="group" aria-label="Напряжение">' + voltages + '</div>' +
+        '</div>' +
+        '<div class="field">' +
+          '<div class="field-label"><span>Партия</span><span class="field-hint">скидка за серию</span></div>' +
+          '<div class="seg seg-wrap" role="group" aria-label="Партия">' + qtys + '</div>' +
+        '</div>' +
+      '</div>' +
+      stepNav();
+  }
+
+  /* шаг 2 */
+  function renderStep2() {
+    const envs = Object.keys(D.ENVIRONMENTS).map(function (id) {
+      const env = D.ENVIRONMENTS[id];
+      return '<button type="button" class="opt env-card ' + (state.environment === id ? 'is-on' : '') + '" data-action="environment" data-value="' + id + '" aria-pressed="' + (state.environment === id ? 'true' : 'false') + '">' +
+        '<span class="env-ico">' + ENV_ICONS[id] + '</span>' +
+        '<span class="opt-check" aria-hidden="true"></span>' +
+        '<span class="opt-name">' + env.name + '</span>' +
+        '<span class="opt-desc">' + env.desc + '</span>' +
+        '<span class="env-hint">' + env.hint + '</span>' +
+      '</button>';
+    }).join('');
+
+    const sec = D.SECTIONS.find(function (s) { return s.value === Number(state.section); }) || D.SECTIONS[3];
+
+    return '<div class="step-head">' +
+        '<p class="step-kicker">Шаг 2 · Параметры</p>' +
+        '<h3>Геометрия и условия</h3>' +
+        '<p class="step-lead">Длина, количество цепей и ветвей определяют материалы и трудозатраты. Условия эксплуатации — защиту и коэффициенты.</p>' +
+      '</div>' +
+      rangeField({
+        key: 'length', label: 'Длина жгута', min: 1, max: 30, step: 0.5, value: state.length,
+        text: function (v) { return num(v) + ' м'; },
+        marks: ['1 м', '15 м', '30 м']
+      }) +
+      rangeField({
+        key: 'circuits', label: 'Количество цепей', min: 4, max: 64, step: 2, value: state.circuits,
+        text: function (v) { return v + ' ' + circuitsWord(v); },
+        marks: ['4', '32', '64']
+      }) +
+      rangeField({
+        key: 'branches', label: 'Ветви и отводы', min: 0, max: 12, step: 1, value: state.branches,
+        text: function (v) { return v + ' ' + branchesWord(v); },
+        marks: ['0', '6', '12']
+      }) +
+      '<p class="field-note" style="margin-top:-12px">Сейчас в расчёте: ' + state.circuits + ' ' + circuitsWord(state.circuits) +
+        ' · ' + num(state.circuits * state.length) + ' погонных метров провода · до ' + sec.amp + ' А на цепь при сечении ' + sec.label + '.</p>' +
+      '<div class="field" style="margin-top:24px">' +
+        '<div class="field-label"><span>Условия эксплуатации</span><span class="field-hint">влияет на материалы и цену</span></div>' +
+        '<div class="env-grid" role="group" aria-label="Условия эксплуатации">' + envs + '</div>' +
+      '</div>' +
+      stepNav();
+  }
+
+  /* шаг 3 */
+  function renderStep3() {
+    const sections = D.SECTIONS.map(function (s) {
+      return '<button type="button" class="opt section-opt ' + (Number(state.section) === s.value ? 'is-on' : '') + '" data-action="section" data-value="' + s.value + '" aria-pressed="' + (Number(state.section) === s.value ? 'true' : 'false') + '">' +
+        '<span class="so-label">' + s.label + '</span>' +
+        '<span class="so-amp">' + s.amp + ' А</span>' +
+        '<span class="so-use">' + s.use + '</span>' +
+        '<span class="opt-check" aria-hidden="true"></span>' +
+      '</button>';
+    }).join('');
+
+    const insulations = Object.keys(D.INSULATION).map(function (id) {
+      const ins = D.INSULATION[id];
+      return optButton({ on: state.insulation === id, action: 'insulation', value: id, name: ins.name, desc: ins.desc, meta: ins.temp });
+    }).join('');
+
+    const conductors = Object.keys(D.CONDUCTORS).map(function (id) {
+      const c = D.CONDUCTORS[id];
+      return optButton({ on: state.conductor === id, action: 'conductor', value: id, name: c.name, desc: c.desc, meta: c.coef > 1 ? '+' + Math.round((c.coef - 1) * 100) + '% к проводу' : 'базовый вариант' });
+    }).join('');
+
+    const colors = Object.keys(D.COLORS).map(function (id) {
+      const c = D.COLORS[id];
+      return optButton({ on: state.colorCode === id, action: 'colors', value: id, name: c.name, desc: c.desc });
+    }).join('');
+
+    return '<div class="step-head">' +
+        '<p class="step-kicker">Шаг 3 · Провода</p>' +
+        '<h3>Сечение, изоляция и жила</h3>' +
+        '<p class="step-lead">Сечение указано на одну жилу. Для силовых цепей берите с запасом по току — конфигуратор посчитает стоимость по выбранному варианту.</p>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label"><span>Сечение жилы</span><span class="field-hint">до 100 А на цепь</span></div>' +
+        '<div class="opt-grid cols-5" role="group" aria-label="Сечение">' + sections + '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label"><span>Изоляция</span><span class="field-hint">температурный класс</span></div>' +
+        '<div class="opt-grid cols-4" role="group" aria-label="Изоляция">' + insulations + '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label">Материал жилы</div>' +
+        '<div class="opt-grid" role="group" aria-label="Материал жилы">' + conductors + '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label">Цветовая маркировка</div>' +
+        '<div class="opt-grid cols-3" role="group" aria-label="Цветовая маркировка">' + colors + '</div>' +
+      '</div>' +
+      stepNav();
+  }
+
+  /* шаг 4 */
+  function renderStep4() {
+    const connectors = Object.keys(D.CONNECTORS).map(function (id) {
+      const c = D.CONNECTORS[id];
+      return optButton({ on: state.connectors === id, action: 'connectors', value: id, name: c.name, desc: c.desc, meta: (c.short || c.note) + ' · ' + int(c.price) + ' ₽/шт' });
+    }).join('');
+
+    const sleeves = Object.keys(D.SLEEVES).map(function (id) {
+      const s = D.SLEEVES[id];
+      return optButton({ on: state.sleeve === id, action: 'sleeve', value: id, name: s.name, desc: s.desc, meta: s.price ? '+' + int(s.price) + ' ₽/м' : 'без доплаты' });
+    }).join('');
+
+    const ips = Object.keys(D.IP).map(function (id) {
+      const ip = D.IP[id];
+      return '<button type="button" class="' + (state.ip === id ? 'is-on' : '') + '" data-action="ip" data-value="' + id + '" aria-pressed="' + (state.ip === id ? 'true' : 'false') + '">' + ip.name + '</button>';
+    }).join('');
+
+    const labels = Object.keys(D.LABELS).map(function (id) {
+      const l = D.LABELS[id];
+      return optButton({ on: state.labels === id, action: 'labels', value: id, name: l.name, desc: l.desc, meta: l.price ? '+' + int(l.price) + ' ₽' : 'включено' });
+    }).join('');
+
+    return '<div class="step-head">' +
+        '<p class="step-kicker">Шаг 4 · Разъёмы и защита</p>' +
+        '<h3>Чем соединять и как защищать</h3>' +
+        '<p class="step-lead">Разъёмы подбираем под ток, среду и удобство монтажа. Защита задаёт ресурс жгута в реальных условиях.</p>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label"><span>Серия разъёмов</span><span class="field-hint">в расчёте ' + lastResult.connectorCount + ' шт</span></div>' +
+        '<div class="opt-grid cols-3" role="group" aria-label="Серия разъёмов">' + connectors + '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<button type="button" class="switch-row ' + (state.sealed ? 'is-on' : '') + '" data-action="toggle-sealed" role="switch" aria-checked="' + (state.sealed ? 'true' : 'false') + '">' +
+          '<span class="switch" aria-hidden="true"><span class="knob"></span></span>' +
+          '<span class="switch-text"><b>Герметичные разъёмы</b><small>Уплотнения, заглушки свободных пинов, защита от влаги</small></span>' +
+          '<span class="switch-state">' + (state.sealed ? 'включено' : 'выключено') + '</span>' +
+        '</button>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label"><span>Защита жгута</span><span class="field-hint">цена за метр</span></div>' +
+        '<div class="opt-grid cols-3" role="group" aria-label="Защита жгута">' + sleeves + '</div>' +
+      '</div>' +
+      '<div class="field-two">' +
+        '<div class="field">' +
+          '<div class="field-label">Класс защиты</div>' +
+          '<div class="seg" role="group" aria-label="Класс защиты">' + ips + '</div>' +
+          '<p class="field-note">IP67 — кратковременное погружение, IP68 — длительное. Герметизация учитывается в цене.</p>' +
+        '</div>' +
+        '<div class="field">' +
+          '<div class="field-label">Маркировка</div>' +
+          '<div class="opt-grid cols-3" style="grid-template-columns:1fr" role="group" aria-label="Маркировка">' + labels + '</div>' +
+        '</div>' +
+      '</div>' +
+      stepNav();
+  }
+
+  /* шаг 5 */
+  function renderStep5() {
+    const extras = D.EXTRAS.map(function (e) {
+      const checked = state.extras.indexOf(e.id) >= 0;
+      return '<label class="extra">' +
+        '<input type="checkbox" data-extra="' + e.id + '"' + (checked ? ' checked' : '') + '>' +
+        '<span class="extra-box" aria-hidden="true"></span>' +
+        '<span class="extra-text"><b>' + e.name + '</b><small>' + e.desc + '</small></span>' +
+        '<span class="extra-price">+' + int(e.price) + ' ₽</span>' +
+      '</label>';
+    }).join('');
+
+    return '<div class="step-head">' +
+        '<p class="step-kicker">Шаг 5 · Опции</p>' +
+        '<h3>Что добавить к жгуту</h3>' +
+        '<p class="step-lead">Опции не обязательны, но экономит время на монтаже и приёмке. Схема, протокол и блок предохранителей уже в типовом наборе.</p>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label"><span>Дополнительно</span><span class="field-hint">' + state.extras.length + ' выбрано</span></div>' +
+        '<div class="extra-grid" role="group" aria-label="Дополнительные опции">' + extras + '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label"><span>Комментарий инженеру</span><span class="field-hint">необязательно</span></div>' +
+        '<textarea class="comment" maxlength="500" data-comment placeholder="Например: нужен разъём XS12 под панель, длина ветви до кормы 4,2 м, маркировка по схеме заказчика.">' + esc(state.comment || '') + '</textarea>' +
+      '</div>' +
+      stepNav();
+  }
+
+  /* шаг 6 */
+  function specRows() {
+    const r = lastResult;
+    return [
+      ['Тип техники', D.TYPES[state.type].name],
+      ['Назначение', r.purpose.name],
+      ['Напряжение', state.voltage + ' В'],
+      ['Партия', state.qty + ' шт'],
+      ['Длина', num(state.length) + ' м'],
+      ['Цепей', state.circuits + ' ' + circuitsWord(state.circuits)],
+      ['Ветвей', state.branches + ' ' + branchesWord(state.branches)],
+      ['Сечение', r.section.label + ', до ' + r.section.amp + ' А'],
+      ['Изоляция', r.insulation.name + ', ' + r.insulation.temp],
+      ['Жила', r.conductor.name],
+      ['Маркировка', r.colors.name],
+      ['Разъёмы', r.connector.name + ', ' + r.connectorCount + ' шт' + (state.sealed ? ', герметичные' : '')],
+      ['Защита', r.sleeve.name],
+      ['Класс', r.ip.name + ' — ' + r.ip.desc],
+      ['Бирки', r.labels.name],
+      ['Опции', extrasText()],
+      ['Код расчёта', r.code],
+      ['Срок', r.leadDays + ' раб. дн.']
+    ];
+  }
+
+  function extrasText() {
+    if (!state.extras.length) return 'нет';
+    return state.extras.map(function (id) {
+      const e = D.EXTRAS.find(function (x) { return x.id === id; });
+      return e ? e.name : '';
+    }).filter(Boolean).join(', ');
+  }
+
+  function renderStep6() {
+    const r = lastResult;
+    const rows = specRows().map(function (row) {
+      return '<div class="spec-row"><dt>' + row[0] + '</dt><dd>' + esc(row[1]) + '</dd></div>';
+    }).join('');
+
+    const b = r.components;
+    const breakdown =
+      '<li><span>Провод и защита</span><b>' + money(b.wire + b.sheath) + '</b></li>' +
+      '<li><span>Сборка и разделка</span><b>' + money(b.labor) + '</b></li>' +
+      '<li><span>Разъёмы и контакты</span><b>' + money(b.connectors) + '</b></li>' +
+      (b.marking ? '<li><span>Маркировка</span><b>' + money(b.marking) + '</b></li>' : '') +
+      (b.extras ? '<li><span>Опции</span><b>' + money(b.extras) + '</b></li>' : '') +
+      '<li class="bd-factor"><span>Коэффициент исполнения ×' + String(r.factor).replace('.', ',') + '</span><b>+' + money(b.execution) + '</b></li>' +
+      '<li class="bd-total"><span>Цена за 1 жгут</span><b>' + money(r.priceOne) + '</b></li>' +
+      (state.qty > 1 ? '<li class="bd-discount"><span>Серийная скидка −' + Math.round(r.discount * 100) + '%</span><b>−' + money(r.priceOne - r.priceUnit) + '</b></li>' : '') +
+      (state.qty > 1 ? '<li class="bd-total"><span>Итого за ' + state.qty + ' шт</span><b>' + money(r.total) + '</b></li>' : '');
+
+    return '<div class="step-head">' +
+        '<p class="step-kicker">Шаг 6 · Итог</p>' +
+        '<h3>Предварительный расчёт готов</h3>' +
+        '<p class="step-lead">Код конфигурации ' + r.code + '. Сохраните ссылку или скачайте спецификацию — расчёт зафиксирован. Точную цену подтвердим после проверки ТЗ.</p>' +
+      '</div>' +
+      '<div class="result-top">' +
+        '<div class="result-price">' +
+          '<span class="rp-label">' + (state.qty > 1 ? 'Итого за ' + state.qty + ' шт' : 'Цена за 1 жгут') + '</span>' +
+          '<b>' + money(r.total) + '</b>' +
+          '<small>' + (state.qty > 1 ? money(r.priceUnit) + ' за жгут · скидка ' + Math.round(r.discount * 100) + '%' : 'предварительно, без НДС') + '</small>' +
+        '</div>' +
+        '<div class="result-meta">' +
+          '<div><span>Срок</span><b>' + r.leadDays + ' раб. дн.</b></div>' +
+          '<div><span>Масса</span><b>' + num(r.weight) + ' кг</b></div>' +
+          '<div><span>Разъёмов</span><b>' + r.connectorCount + '</b></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label">Спецификация</div>' +
+        '<dl class="spec-grid">' + rows + '</dl>' +
+      '</div>' +
+      '<div class="field">' +
+        '<div class="field-label">Из чего складывается цена</div>' +
+        '<ul class="breakdown">' + breakdown + '</ul>' +
+        '<p class="field-note">Цена без НДС и доставки. Материалы и работа — по текущему прайсу; коэффициент учитывает тип техники, среду, герметизацию и IP.</p>' +
+      '</div>' +
+      '<div class="result-actions">' +
+        '<button type="button" class="btn btn-ghost" data-action="download">Скачать спецификацию</button>' +
+        '<button type="button" class="btn btn-ghost" data-action="print">Печать / PDF</button>' +
+        '<button type="button" class="btn btn-ghost" data-action="share">Ссылка на расчёт</button>' +
+        '<button type="button" class="btn btn-ghost" data-action="reset">Сбросить</button>' +
+      '</div>' +
+      '<div class="lead-card" id="lead">' +
+        '<div class="lead-head"><h4>Отправить расчёт инженеру</h4><p>Проверим совместимость разъёмов, уточним цену и пришлём коммерческое предложение.</p></div>' +
+        '<form id="leadForm" novalidate>' +
+          '<div class="form-grid">' +
+            '<label class="form-field"><span>Имя *</span><input class="input" name="name" autocomplete="name" placeholder="Как к вам обращаться"></label>' +
+            '<label class="form-field"><span>Телефон *</span><input class="input" name="phone" type="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__"></label>' +
+            '<label class="form-field"><span>E-mail</span><input class="input" name="email" type="email" autocomplete="email" placeholder="you@company.ru"></label>' +
+            '<label class="form-field"><span>Город</span><input class="input" name="city" autocomplete="address-level2" placeholder="Москва"></label>' +
+          '</div>' +
+          '<label class="consent"><input type="checkbox" name="consent"> <span>Согласен на обработку персональных данных и получение ответа по этой заявке.</span></label>' +
+          '<div class="form-foot"><button type="submit" class="btn btn-primary">Сформировать заявку</button><small>Письмо откроется в вашей почтовой программе — ничего не отправится без вашего подтверждения.</small></div>' +
+        '</form>' +
+        '<div class="form-status" id="leadStatus" role="status" aria-live="polite"></div>' +
+      '</div>' +
+      stepNav();
+  }
+
+  /* ---------- эскиз ---------- */
+  function drawHarness() {
+    const t = D.TYPES[state.type];
+    const r = lastResult;
+    const accent = t.accent;
+    const x0 = 64;
+    const x1 = 596;
+    const y = 200;
+    const n = Math.min(state.branches, 8);
+    const span = x1 - x0 - 170;
+    const xs = [];
+    for (let i = 0; i < n; i++) {
+      xs.push(x0 + 85 + (n === 1 ? span / 2 : span * i / (n - 1)));
+    }
+    const bundle = 6.5 + Math.min(state.circuits, 64) * 0.15;
+    const bw = Math.max(3, bundle * 0.55);
+
+    function connector(x, cy, label, below) {
+      const ly = below ? cy + 25 : cy - 14;
+      return '<g>' +
+        '<rect x="' + (x - 19) + '" y="' + (cy - 10) + '" width="38" height="20" rx="4" fill="#08141D" stroke="' + accent + '" stroke-width="1.4"/>' +
+        [-12, -6, 0, 6, 12].map(function (dx) {
+          return '<circle cx="' + (x + dx) + '" cy="' + cy + '" r="1.5" fill="' + accent + '"/>';
+        }).join('') +
+        '<text x="' + x + '" y="' + ly + '" text-anchor="middle" class="dwg-label">' + label + '</text>' +
+      '</g>';
+    }
+
+    const branches = xs.map(function (x, i) {
+      const dir = i % 2 ? 1 : -1;
+      const len = 56 + (i % 3) * 20 + (state.branches > 6 ? 6 : 0);
+      const ey = y + dir * len;
+      const d = 'M' + x + ' ' + y + 'V' + ey;
+      return '<path d="' + d + '" stroke="#DCE6EA" stroke-opacity=".1" stroke-width="' + (bw + 5) + '" stroke-linecap="round" fill="none"/>' +
+        '<path d="' + d + '" stroke="' + accent + '" stroke-opacity=".2" stroke-width="' + (bw + 1) + '" stroke-linecap="round" fill="none"/>' +
+        '<path d="' + d + '" stroke="url(#pvGrad)" stroke-width="1.5" stroke-linecap="round" fill="none"/>' +
+        connector(x, ey, 'X' + (i + 3), dir > 0);
+    }).join('');
+
+    const joints = xs.map(function (x) {
+      return '<circle cx="' + x + '" cy="' + y + '" r="3" fill="#08141D" stroke="' + accent + '" stroke-width="1.2"/>';
+    }).join('');
+
+    const dimension = '<g stroke="#93A9B3" stroke-opacity=".55">' +
+        '<path d="M' + x0 + ' 336H' + x1 + '"/>' +
+        '<path d="M' + x0 + ' 329v14M' + x1 + ' 329v14"/>' +
+        '<path d="M' + x0 + ' 336l9-4v8zM' + x1 + ' 336l-9-4v8z" fill="#93A9B3" stroke="none" fill-opacity=".65"/>' +
+      '</g>' +
+      '<text x="' + ((x0 + x1) / 2) + '" y="328" text-anchor="middle" class="dwg-dimtext">L = ' + int(state.length * 1000) + ' мм</text>';
+
+    return '<svg viewBox="0 0 660 400" role="img" aria-label="Эскиз жгута ' + r.code + '">' +
+      '<defs><linearGradient id="pvGrad" x1="0" y1="0" x2="1" y2="0">' +
+        '<stop offset="0" stop-color="#8F4A24"/><stop offset=".52" stop-color="#E8B080"/><stop offset="1" stop-color="#B65F2C"/>' +
+      '</linearGradient></defs>' +
+      '<g fill="none" stroke="#E9E2D3" stroke-opacity=".2">' +
+        '<rect x="12" y="12" width="636" height="376" rx="3"/>' +
+        '<rect x="21" y="21" width="618" height="358" rx="2" stroke-opacity=".09"/>' +
+      '</g>' +
+      '<text x="30" y="42" class="dwg-note">' + t.name.toUpperCase() + ' · ' + state.circuits + ' ЦЕПЕЙ · ' + num(state.length) + ' М · ' + state.voltage + ' В</text>' +
+      '<text x="630" y="42" text-anchor="end" class="dwg-note">' + r.code + '</text>' +
+      '<line x1="30" y1="50" x2="630" y2="50" stroke="#E9E2D3" stroke-opacity=".12"/>' +
+      '<path d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="#DCE6EA" stroke-opacity=".1" stroke-width="' + (bundle + 6) + '" stroke-linecap="round" fill="none"/>' +
+      '<path d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="' + accent + '" stroke-opacity=".2" stroke-width="' + bundle + '" stroke-linecap="round" fill="none"/>' +
+      '<path d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="url(#pvGrad)" stroke-width="2.2" stroke-linecap="round" fill="none"/>' +
+      '<path class="dwg-pulse" d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="#FFD9B0" stroke-width="2" stroke-dasharray="3 34" stroke-linecap="round" fill="none"/>' +
+      branches + joints +
+      connector(x0, y, 'X1', false) +
+      connector(x1, y, 'X2', false) +
+      dimension +
+      '<g>' +
+        '<rect x="422" y="350" width="214" height="36" fill="#08141D" stroke="#93A9B3" stroke-opacity=".28"/>' +
+        '<line x1="422" y1="368" x2="636" y2="368" stroke="#93A9B3" stroke-opacity=".2"/>' +
+        '<text x="430" y="363" class="dwg-strong">ЖГУТ.ПРО</text>' +
+        '<text x="430" y="380" class="dwg-muted">' + r.code + ' · ' + t.name + '</text>' +
+        '<text x="628" y="363" text-anchor="end" class="dwg-muted">ЭСКИЗ</text>' +
+        '<text x="628" y="380" text-anchor="end" class="dwg-muted">М 1:10</text>' +
+      '</g>' +
+      '<text x="30" y="380" class="dwg-muted">НЕ ДЛЯ ПРОИЗВОДСТВА</text>' +
+      '<text x="30" y="366" class="dwg-muted">' + (state.sealed ? 'ГЕРМЕТИЧНЫЕ РАЗЪЁМЫ' : 'РАЗЪЁМЫ БЕЗ УПЛОТНЕНИЙ') + ' · ' + (r.ip.name) + '</text>' +
+    '</svg>';
+  }
+
+  /* ---------- правая панель ---------- */
+  function updateAside() {
+    const host = $('#configAside');
+    if (!host || !lastResult) return;
+    const r = lastResult;
+    const t = D.TYPES[state.type];
+    host.style.setProperty('--accent', t.accent);
+    const qtySub = state.qty > 1
+      ? state.qty + ' шт · скидка ' + Math.round(r.discount * 100) + '%'
+      : 'за 1 жгут · партия 1 шт';
+    const nextLabel = step === 6 ? 'К заявке' : 'Перейти к итогу';
+
+    host.innerHTML =
+      '<div class="preview-head">' +
+        '<div><span class="pv-kicker">Эскиз жгута</span><div class="pv-title">' + t.name + ' · ' + r.purpose.name + '</div></div>' +
+        '<span class="pv-code">' + r.code + '</span>' +
+      '</div>' +
+      '<div class="pv-drawing">' + drawHarness() + '</div>' +
+      '<div class="metrics">' +
+        '<div class="metric"><span>Длина</span><b>' + num(state.length) + ' м</b></div>' +
+        '<div class="metric"><span>Цепи</span><b>' + state.circuits + '</b></div>' +
+        '<div class="metric"><span>Ветви</span><b>' + state.branches + '</b></div>' +
+        '<div class="metric"><span>Разъёмы</span><b>' + r.connectorCount + ' шт</b></div>' +
+        '<div class="metric"><span>Масса</span><b>' + num(r.weight) + ' кг</b></div>' +
+        '<div class="metric"><span>Ток</span><b>до ' + r.maxAmp + ' А</b></div>' +
+      '</div>' +
+      '<div class="price-box">' +
+        '<div class="price-top"><span class="price-label">Предварительно</span>' +
+          (state.qty > 1 ? '<span class="disc-badge">−' + Math.round(r.discount * 100) + '%</span>' : '') +
+        '</div>' +
+        '<div class="price-value">' + money(r.priceUnit) + '</div>' +
+        '<div class="price-sub">' + qtySub + '</div>' +
+        (state.qty > 1 ? '<div class="price-total"><span>Итого за ' + state.qty + ' шт</span><b>' + money(r.total) + '</b></div>' : '') +
+        '<div class="price-meta"><span>Срок: ' + r.leadDays + ' раб. дн.</span><span>Масса: ' + num(r.weight) + ' кг</span></div>' +
+      '</div>' +
+      '<div class="aside-actions">' +
+        '<button type="button" class="btn btn-primary btn-wide" data-action="' + (step === 6 ? 'to-form' : 'next') + '">' + nextLabel + ' →</button>' +
+        '<div class="aside-row">' +
+          '<button type="button" class="btn btn-ghost-light" data-action="download">Спецификация</button>' +
+          '<button type="button" class="btn btn-ghost-light" data-action="share">Ссылка</button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="aside-note">Расчёт обновляется автоматически. Не оферта: точная цена — после проверки ТЗ.</p>';
+  }
+
+  function updateMobileBar() {
+    const bar = $('#mobileBar');
+    if (!bar || !lastResult) return;
+    bar.innerHTML =
+      '<div class="mb-price"><span>≈</span><b>' + money(lastResult.total) + '</b><small>' + (state.qty > 1 ? state.qty + ' шт' : 'за 1 жгут') + '</small></div>' +
+      '<button type="button" class="btn btn-primary" data-action="' + (step === 6 ? 'to-form' : 'next') + '">' + (step === 6 ? 'Заявка' : 'Далее') + ' →</button>';
+  }
+
+  function scheduleAside() {
+    if (asideRaf) return;
+    asideRaf = requestAnimationFrame(function () {
+      asideRaf = 0;
+      updateAside();
+      updateMobileBar();
+    });
+  }
+
+  /* ---------- изменение состояния ---------- */
+  function afterChange(rerenderStep) {
+    lastResult = C.calc(state, D);
+    if (rerenderStep) renderStep();
+    scheduleAside();
+    updateMobileBar();
+    persist();
+  }
+
+  function patch(changes, rerenderStep) {
+    Object.assign(state, changes);
+    state = D.sanitize(state);
+    afterChange(rerenderStep !== false);
+  }
+
+  function setType(typeId) {
+    if (!D.TYPES[typeId]) return;
+    const base = D.presetState(typeId, D.TYPES[typeId].purposes[0].id);
+    state = D.sanitize(Object.assign({}, base, { qty: state.qty, comment: state.comment }));
+    step = 1;
+    renderAll();
+  }
+
+  function setPurpose(purposeId) {
+    const type = D.TYPES[state.type];
+    if (!type.purposes.some(function (p) { return p.id === purposeId; })) return;
+    const base = D.presetState(state.type, purposeId);
+    state = D.sanitize(Object.assign({}, base, { qty: state.qty, comment: state.comment }));
+    renderAll();
+  }
+
+  function applyPreset(id) {
+    const p = D.PRESETS.find(function (x) { return x.id === id; });
+    if (!p) return;
+    const base = D.presetState(p.type, p.purpose);
+    state = D.sanitize(Object.assign({}, base, p.overrides || {}, { qty: 1 }));
+    step = 6;
+    renderAll();
+    scrollToConfig();
+    toast('Пресет загружен: ' + p.title);
+  }
+
+  function resetState() {
+    state = D.presetState(state.type, D.TYPES[state.type].purposes[0].id);
+    step = 1;
+    try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* noop */ }
+    renderAll();
+    toast('Конфигурация сброшена');
+  }
+
+  function go(n) {
+    step = clampStep(n);
+    renderStep();
+    syncStepper();
+    updateAside();
+    updateMobileBar();
+    persist();
+    const panel = $('#configPanel');
+    if (panel) {
+      const top = panel.getBoundingClientRect().top + window.scrollY - 92;
+      window.scrollTo({ top: top, behavior: motionOK ? 'smooth' : 'auto' });
+    }
+  }
+
+  function renderAll() {
+    lastResult = C.calc(state, D);
+    renderStep();
+    syncStepper();
+    updateAside();
+    updateMobileBar();
+    persist();
+  }
+
+  function rangeText(key, v) {
+    if (key === 'length') return num(v) + ' м';
+    if (key === 'circuits') return v + ' ' + circuitsWord(v);
+    if (key === 'branches') return v + ' ' + branchesWord(v);
+    return String(v);
+  }
+
+  function onRange(el) {
+    const key = el.dataset.bind;
+    const v = parseFloat(el.value);
+    if (!key || isNaN(v)) return;
+    state[key] = key === 'length' ? v : Math.round(v);
+    const pct = ((v - Number(el.min)) / (Number(el.max) - Number(el.min)) * 100).toFixed(1);
+    el.style.setProperty('--p', pct + '%');
+    el.setAttribute('aria-valuetext', rangeText(key, v));
+    const out = document.querySelector('[data-out="' + key + '"]');
+    if (out) out.textContent = rangeText(key, v);
+    lastResult = C.calc(state, D);
+    scheduleAside();
+    persistSoon();
+  }
+
+  function onExtraToggle(input) {
+    const id = input.dataset.extra;
+    if (!id) return;
+    if (input.checked) {
+      if (state.extras.indexOf(id) < 0) state.extras.push(id);
+    } else {
+      state.extras = state.extras.filter(function (x) { return x !== id; });
+    }
+    afterChange(false);
+  }
+
+  /* ---------- спецификация / печать / ссылка ---------- */
+  function nowDate() {
+    return new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+  }
+
+  function buildSpecText() {
+    const r = lastResult;
+    const lines = [];
+    lines.push('ЖГУТ.ПРО — спецификация жгута');
+    lines.push('Дата: ' + nowDate());
+    lines.push('Код: ' + r.code);
+    lines.push('');
+    lines.push('ПАРАМЕТРЫ');
+    specRows().forEach(function (row) { lines.push(row[0] + ': ' + row[1]); });
+    lines.push('');
+    lines.push('СОСТАВ И СТОИМОСТЬ');
+    const b = r.components;
+    lines.push('Провод и защита: ' + money(b.wire + b.sheath));
+    lines.push('Сборка и разделка: ' + money(b.labor));
+    lines.push('Разъёмы и контакты: ' + money(b.connectors));
+    lines.push('Маркировка: ' + money(b.marking));
+    lines.push('Опции: ' + money(b.extras));
+    lines.push('Коэффициент исполнения ×' + String(r.factor).replace('.', ',') + ': +' + money(b.execution));
+    lines.push('Цена за 1 жгут: ' + money(r.priceOne));
+    if (state.qty > 1) {
+      lines.push('Скидка за партию ' + state.qty + ' шт: −' + money(r.priceOne - r.priceUnit) + '/шт');
+      lines.push('Цена за жгут с учётом скидки: ' + money(r.priceUnit));
+      lines.push('Итого за ' + state.qty + ' шт: ' + money(r.total));
+    }
+    lines.push('');
+    if (state.comment) {
+      lines.push('КОММЕНТАРИЙ');
+      lines.push(state.comment);
+      lines.push('');
+    }
+    lines.push('Срок производства: ' + r.leadDays + ' рабочих дней.');
+    lines.push('Цены предварительные, не являются публичной офертой. Точная стоимость — после согласования ТЗ.');
+    lines.push('');
+    lines.push('Контакты: ' + D.CONTACTS.phone + ' · ' + D.CONTACTS.email + ' · ' + D.CONTACTS.city);
+    return lines.join('\r\n');
+  }
+
+  function downloadSpec() {
+    const text = buildSpecText();
+    const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'spec-' + lastResult.code + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    toast('Спецификация скачана');
+  }
+
+  function buildPrintHtml() {
+    const r = lastResult;
+    const b = r.components;
+    const rows = specRows();
+    const half = Math.ceil(rows.length / 2);
+    function table(list) {
+      return '<table class="ps-table">' + list.map(function (row) {
+        return '<tr><th>' + esc(row[0]) + '</th><td>' + esc(row[1]) + '</td></tr>';
+      }).join('') + '</table>';
+    }
+    return '<div class="ps-top">' +
+        '<div class="ps-brand">ЖГУТ<span>.ПРО</span><small>инженерные жгуты</small></div>' +
+        '<div class="ps-meta"><b>' + r.code + '</b>' + nowDate() + '<br>Предварительный расчёт</div>' +
+      '</div>' +
+      '<h1 class="ps-title">Спецификация жгута</h1>' +
+      '<p class="ps-sub">' + D.TYPES[state.type].name + ' · ' + r.purpose.name + ' · ' + state.circuits + ' ' + circuitsWord(state.circuits) + ' · ' + num(state.length) + ' м</p>' +
+      '<div class="ps-cols">' + table(rows.slice(0, half)) + table(rows.slice(half)) + '</div>' +
+      '<table class="ps-table">' +
+        '<tr><th>Провод и защита</th><td>' + money(b.wire + b.sheath) + '</td></tr>' +
+        '<tr><th>Сборка и разделка</th><td>' + money(b.labor) + '</td></tr>' +
+        '<tr><th>Разъёмы и контакты</th><td>' + money(b.connectors) + '</td></tr>' +
+        '<tr><th>Маркировка</th><td>' + money(b.marking) + '</td></tr>' +
+        '<tr><th>Опции</th><td>' + money(b.extras) + '</td></tr>' +
+        '<tr><th>Коэффициент исполнения ×' + String(r.factor).replace('.', ',') + '</th><td>+' + money(b.execution) + '</td></tr>' +
+      '</table>' +
+      '<div class="ps-total"><span>' + (state.qty > 1 ? 'Итого за ' + state.qty + ' шт' : 'Цена за 1 жгут') + '</span><b>' + money(r.total) + '</b></div>' +
+      '<p class="ps-note">Срок производства: ' + r.leadDays + ' рабочих дней. Цены предварительные и не являются публичной офертой; точная стоимость фиксируется после согласования технического задания. Масса: ' + num(r.weight) + ' кг. ' + (state.comment ? 'Комментарий: ' + esc(state.comment) : '') + '</p>' +
+      '<div class="ps-sign"><span>Исполнитель: ЖГУТ.ПРО · ' + D.CONTACTS.phone + '</span><span>Заказчик: ____________________</span></div>';
+  }
+
+  function printSpec() {
+    const sheet = $('#printSheet');
+    if (!sheet) return;
+    sheet.innerHTML = buildPrintHtml();
+    window.print();
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+    ta.remove();
+    if (!ok) throw new Error('copy-failed');
+    return true;
+  }
+
+  async function shareSpec() {
+    const url = window.location.href.split('#')[0] + '#cfg=' + encodeState(state);
+    try {
+      await copyText(url);
+      toast('Ссылка на расчёт скопирована');
+    } catch (err) {
+      window.prompt('Скопируйте ссылку на расчёт:', url);
+    }
+  }
+
+  /* ---------- заявка ---------- */
+  function buildLeadText(fd) {
+    const r = lastResult;
+    const lines = [];
+    lines.push('Заявка на жгут ' + r.code);
+    lines.push('Имя: ' + fd.name);
+    lines.push('Телефон: ' + fd.phone);
+    if (fd.email) lines.push('E-mail: ' + fd.email);
+    if (fd.city) lines.push('Город: ' + fd.city);
+    lines.push('');
+    lines.push(buildSpecText());
+    return lines.join('\r\n');
+  }
+
+  function handleLead(form) {
+    const status = $('#leadStatus');
+    const nameEl = form.elements.name;
+    const phoneEl = form.elements.phone;
+    const emailEl = form.elements.email;
+    const cityEl = form.elements.city;
+    const consentEl = form.elements.consent;
+    const consentWrap = form.querySelector('.consent');
+    const name = nameEl.value.trim();
+    const phone = phoneEl.value.trim();
+    const email = emailEl.value.trim();
+    const city = cityEl.value.trim();
+    let ok = true;
+
+    function mark(el, valid) {
+      if (el) el.classList.toggle('is-invalid', !valid);
+    }
+
+    mark(nameEl, name.length >= 2);
+    mark(phoneEl, phone.replace(/\D/g, '').length >= 10);
+    mark(emailEl, !email || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email));
+    if (consentWrap) consentWrap.classList.toggle('is-invalid', !consentEl.checked);
+    if (name.length < 2 || phone.replace(/\D/g, '').length < 10 || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) || !consentEl.checked) {
+      ok = false;
+    }
+    if (!ok) {
+      status.className = 'form-status is-error';
+      status.textContent = 'Проверьте имя, телефон, e-mail и согласие на обработку данных.';
+      return;
+    }
+
+    const text = buildLeadText({ name: name, phone: phone, email: email, city: city });
+    const mailto = 'mailto:' + D.CONTACTS.email +
+      '?subject=' + encodeURIComponent('Заявка на жгут ' + lastResult.code) +
+      '&body=' + encodeURIComponent(text);
+    lastLead = { text: text, mailto: mailto };
+
+    form.style.display = 'none';
+    status.className = 'form-status';
+    status.innerHTML =
+      '<div class="form-success">' +
+        '<div class="fs-icon">✓</div>' +
+        '<div><b>Заявка сформирована</b>' +
+          '<p>Письмо с параметрами жгута уже собрано. Отправьте его — ответим в течение рабочего дня. Если почтовая программа не настроена, скопируйте текст и отправьте на ' + D.CONTACTS.email + '.</p>' +
+          '<div class="fs-actions">' +
+            '<a class="btn btn-primary" href="' + mailto + '">Открыть письмо</a>' +
+            '<button type="button" class="btn btn-ghost" data-action="copy-lead">Скопировать текст</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* ---------- обработчики ---------- */
+  function handleAction(el) {
+    const action = el.dataset.action;
+    const value = el.dataset.value;
+    if (action === 'type') { if (state.type !== value) setType(value); return; }
+    if (action === 'purpose') { if (state.purpose !== value) setPurpose(value); return; }
+    if (action === 'type-jump') {
+      setType(value);
+      scrollToConfig();
+      toast('Тип выбран: ' + D.TYPES[value].name + '. Уточните назначение жгута.');
+      return;
+    }
+    if (action === 'preset') { applyPreset(value); return; }
+    if (action === 'qty') { patch({ qty: Number(value) }); return; }
+    if (action === 'voltage') { patch({ voltage: Number(value) }); return; }
+    if (action === 'environment') { patch({ environment: value }); return; }
+    if (action === 'section') { patch({ section: Number(value) }); return; }
+    if (action === 'insulation') { patch({ insulation: value }); return; }
+    if (action === 'conductor') { patch({ conductor: value }); return; }
+    if (action === 'colors') { patch({ colorCode: value }); return; }
+    if (action === 'connectors') { patch({ connectors: value }); return; }
+    if (action === 'sleeve') { patch({ sleeve: value }); return; }
+    if (action === 'ip') { patch({ ip: value }); return; }
+    if (action === 'labels') { patch({ labels: value }); return; }
+    if (action === 'toggle-sealed') { patch({ sealed: !state.sealed }); return; }
+    if (action === 'next') {
+      if (step >= 6) scrollToForm();
+      else go(step + 1);
+      return;
+    }
+    if (action === 'back') { go(step - 1); return; }
+    if (action === 'step') { go(Number(el.dataset.step)); return; }
+    if (action === 'to-form') { scrollToForm(); return; }
+    if (action === 'download') { downloadSpec(); return; }
+    if (action === 'print') { printSpec(); return; }
+    if (action === 'share') { shareSpec(); return; }
+    if (action === 'reset') { resetState(); return; }
+    if (action === 'copy-lead') {
+      if (!lastLead) return;
+      copyText(lastLead.text).then(function () { toast('Текст заявки скопирован'); })
+        .catch(function () { toast('Не удалось скопировать — выделите текст вручную'); });
+      return;
+    }
+  }
+
+  function bind() {
+    document.addEventListener('click', function (e) {
+      const actionEl = e.target.closest('[data-action]');
+      if (actionEl) {
+        e.preventDefault();
+        handleAction(actionEl);
+        return;
+      }
+      const navLink = e.target.closest('#siteNav a');
+      if (navLink) closeMenu();
+      if (document.body.classList.contains('menu-open') && !e.target.closest('.site-head')) closeMenu();
+    });
+
+    document.addEventListener('input', function (e) {
+      const el = e.target;
+      if (el.matches('input[type="range"][data-bind]')) onRange(el);
+      if (el.matches('[data-comment]')) {
+        state.comment = el.value.slice(0, 500);
+        persistSoon();
+      }
+      if (el.matches('.input.is-invalid')) el.classList.remove('is-invalid');
+      if (el.matches('input[name="consent"]')) {
+        const wrap = el.closest('.consent');
+        if (wrap && el.checked) wrap.classList.remove('is-invalid');
+      }
+    });
+
+    document.addEventListener('change', function (e) {
+      const extra = e.target.closest('input[data-extra]');
+      if (extra) onExtraToggle(extra);
+    });
+
+    document.addEventListener('submit', function (e) {
+      const form = e.target.closest('#leadForm');
+      if (!form) return;
+      e.preventDefault();
+      handleLead(form);
+    });
+
+    const navToggle = $('#navToggle');
+    if (navToggle) {
+      navToggle.addEventListener('click', function () {
+        const open = document.body.classList.toggle('menu-open');
+        navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeMenu();
+    });
+
+    window.addEventListener('scroll', function () {
+      document.body.classList.toggle('scrolled', window.scrollY > 8);
+    }, { passive: true });
+
+    if ('IntersectionObserver' in window) {
+      const target = $('#configurator');
+      if (target) {
+        new IntersectionObserver(function (entries) {
+          document.body.classList.toggle('config-inview', entries[0].isIntersecting);
+        }, { threshold: 0 }).observe(target);
+      }
+    }
+  }
+
+  function init() {
+    const initial = loadInitial();
+    state = initial.state;
+    step = initial.step;
+    lastResult = C.calc(state, D);
+
+    renderTypeCards();
+    renderPresets();
+    renderStepper();
+    renderStep();
+    syncStepper();
+    updateAside();
+    updateMobileBar();
+    bind();
+
+    const year = $('#year');
+    if (year) year.textContent = String(new Date().getFullYear());
+
+    if (/#cfg=/.test(window.location.hash)) {
+      setTimeout(scrollToConfig, 380);
+    }
+
+    window.addEventListener('hashchange', function () {
+      const match = window.location.hash.match(/#cfg=([A-Za-z0-9_-]+)/);
+      if (!match) return;
+      try {
+        state = D.sanitize(JSON.parse(decodeState(match[1])));
+        step = 6;
+        renderAll();
+        scrollToConfig();
+      } catch (err) { /* noop */ }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
