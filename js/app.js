@@ -12,7 +12,7 @@
   const STORAGE_KEY = 'zhgutpro:cfg:v1';
   const STEPS = [
     { name: 'Техника', short: 'Техника' },
-    { name: 'Параметры', short: 'Параметры' },
+    { name: 'Состав', short: 'Состав' },
     { name: 'Провода', short: 'Провода' },
     { name: 'Разъёмы', short: 'Разъёмы' },
     { name: 'Опции', short: 'Опции' },
@@ -59,6 +59,20 @@
     engine: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2s1.5 4-1.5 7S9 14 12 16c-4 0-7-2.5-7-6 0-2 1-3.5 1-3.5S4 8 4 11a8 8 0 0 0 16 0c0-5-7-9-7-9z"/></svg>',
     bilge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 9c2 0 2 2 4 2s2-2 4-2 2 2 4 2 2-2 4-2 2 2 4 2"/><path d="M2 15c2 0 2 2 4 2s2-2 4-2 2 2 4 2 2-2 4-2 2 2 4 2"/></svg>'
   };
+  const BLOCK_ICONS = {
+    bulb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1.3 1.7 1.4 3h5.2c.1-1.3.6-2.2 1.4-3A6 6 0 0 0 12 3z"/></svg>',
+    socket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/><path d="M8 15h8"/></svg>',
+    drop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5S6 10.2 6 14a6 6 0 0 0 12 0c0-3.8-6-10.5-6-10.5z"/><path d="M9.5 14.5a2.6 2.6 0 0 0 2.5 2.4"/></svg>',
+    flame: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2s1.5 4-1.5 7S9 14 12 16c-4 0-7-2.5-7-6 0-2 1-3.5 1-3.5S4 8 4 11a8 8 0 0 0 16 0c0-5-7-9-7-9z"/></svg>',
+    gauge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-5"/><circle cx="12" cy="18" r="1.6" fill="currentColor"/><path d="M5 18h2M17 18h2"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
+    panel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10h10M7 14h6"/><circle cx="17" cy="14" r="1.4" fill="currentColor"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>'
+  };
+  const MODE_ICONS = {
+    blocks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg>',
+    simple: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2.2" fill="#fff"/><circle cx="15" cy="12" r="2.2" fill="#fff"/><circle cx="8" cy="17" r="2.2" fill="#fff"/></svg>'
+  };
 
   /* ---------- состояние ---------- */
   let state;
@@ -68,6 +82,7 @@
   let toastTimer = null;
   let persistTimer = null;
   let asideRaf = 0;
+  let draggedBlockId = null;
 
   function encodeState(s) {
     const bytes = new TextEncoder().encode(JSON.stringify(s));
@@ -323,8 +338,171 @@
       stepNav();
   }
 
-  /* шаг 2 */
-  function renderStep2() {
+  /* ---------- блоки ---------- */
+  function nextBlockId() {
+    let max = 0;
+    state.blocks.forEach(function (b) {
+      const match = /^b(\d+)$/.exec(b.id);
+      if (match) max = Math.max(max, Number(match[1]));
+    });
+    return 'b' + (max + 1);
+  }
+
+  function findBlock(id) {
+    return state.blocks.find(function (b) { return b.id === id; });
+  }
+
+  function blockCost(id) {
+    const item = (lastResult.blockCosts || []).find(function (c) { return c.id === id; });
+    return item ? item.total : 0;
+  }
+
+  function syncBlocksAggregate() {
+    if (state.mode !== 'blocks') return;
+    const agg = D.aggregateBlocks(state.trunk, state.blocks);
+    state.circuits = Math.max(4, Math.min(64, agg.circuits));
+    state.length = Math.max(1, Math.min(30, Math.round(agg.length * 10) / 10));
+    state.branches = Math.min(12, agg.branches);
+    state.section = Number(state.trunk.section) || state.section;
+    state.connectors = state.trunk.connector || state.connectors;
+  }
+
+  function trunkLengthMax() {
+    const others = Math.max(0, state.length - Number(state.trunk.length));
+    return Math.max(1, Math.min(10, Math.floor((30 - others) * 2) / 2));
+  }
+
+  function blockLengthMax(block) {
+    const others = Math.max(0, state.length - block.length * block.qty);
+    return Math.max(0.5, Math.min(8, Math.floor(((30 - others) / block.qty) * 2) / 2));
+  }
+
+  function optionsHTML(list, selected) {
+    return list.map(function (item) {
+      return '<option value="' + item.value + '"' + (item.value === selected ? ' selected' : '') + '>' + item.label + '</option>';
+    }).join('');
+  }
+
+  function sectionOptions(selected) {
+    return optionsHTML(D.SECTIONS.map(function (s) { return { value: s.value, label: s.label }; }), Number(selected));
+  }
+
+  function connectorOptions(selected) {
+    return Object.keys(D.CONNECTORS).map(function (id) {
+      return '<option value="' + id + '"' + (id === selected ? ' selected' : '') + '>' + D.CONNECTORS[id].name + '</option>';
+    }).join('');
+  }
+
+  function modeSwitch() {
+    return '<div class="mode-switch" role="group" aria-label="Способ сборки жгута">' +
+      '<button type="button" class="mode-card ' + (state.mode === 'blocks' ? 'is-on' : '') + '" data-action="mode" data-value="blocks" aria-pressed="' + (state.mode === 'blocks' ? 'true' : 'false') + '">' +
+        '<span class="mode-icon">' + MODE_ICONS.blocks + '</span>' +
+        '<span class="mode-text"><b>Блоками</b><small>Как конструктор: модули, разъёмы, длины</small></span>' +
+        '<span class="mode-dot" aria-hidden="true"></span>' +
+      '</button>' +
+      '<button type="button" class="mode-card ' + (state.mode === 'simple' ? 'is-on' : '') + '" data-action="mode" data-value="simple" aria-pressed="' + (state.mode === 'simple' ? 'true' : 'false') + '">' +
+        '<span class="mode-icon">' + MODE_ICONS.simple + '</span>' +
+        '<span class="mode-text"><b>По параметрам</b><small>Быстро: длина, цепи, ветви</small></span>' +
+        '<span class="mode-dot" aria-hidden="true"></span>' +
+      '</button>' +
+    '</div>';
+  }
+
+  function trunkCardHTML() {
+    const trunk = state.trunk || D.defaultTrunk(state.type);
+    const maxLen = trunkLengthMax();
+    const value = Math.min(Number(trunk.length) || 1, maxLen);
+    const pct = maxLen > 1 ? ((value - 1) / (maxLen - 1) * 100).toFixed(1) : '100';
+    return '<div class="trunk-card">' +
+      '<div class="trunk-head">' +
+        '<span class="trunk-badge">БАЗА</span>' +
+        '<span class="trunk-icon">' + BLOCK_ICONS.bolt + '</span>' +
+        '<div class="trunk-title"><b>Магистраль</b><small>От источника питания до распределения</small></div>' +
+        '<span class="trunk-cost">≈ ' + money(lastResult.trunkCost || 0) + '</span>' +
+      '</div>' +
+      '<div class="brick-controls trunk-controls">' +
+        '<div class="brick-control brick-length">' +
+          '<span>Длина магистрали <b data-trunk-out>' + num(value) + ' м</b></span>' +
+          '<input class="range range-sm" type="range" min="1" max="' + Math.max(1, Math.min(10, maxLen)) + '" step="0.5" value="' + value + '" data-trunk="length" style="--p:' + pct + '%" aria-label="Длина магистрали">' +
+        '</div>' +
+        '<label class="brick-control"><span>Сечение</span><select class="mini-select" data-trunk-field="section">' + sectionOptions(trunk.section) + '</select></label>' +
+        '<label class="brick-control"><span>Разъём</span><select class="mini-select" data-trunk-field="connector">' + connectorOptions(trunk.connector) + '</select></label>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function paletteHTML() {
+    return '<div class="field">' +
+      '<div class="field-label"><span>Добавить блок</span><span class="field-hint">нажмите — модуль встанет в конец цепи</span></div>' +
+      '<div class="palette">' +
+        Object.keys(D.BLOCKS).map(function (id) {
+          const b = D.BLOCKS[id];
+          return '<button type="button" class="palette-card" data-action="block-add" data-value="' + id + '" style="--brick:' + b.color + '">' +
+            '<span class="palette-icon">' + (BLOCK_ICONS[b.icon] || BLOCK_ICONS.plus) + '</span>' +
+            '<span class="palette-name">' + b.name + '</span>' +
+            '<span class="palette-meta">' + b.circuits + ' ' + circuitsWord(b.circuits) + ' · ' + num(b.length) + ' м</span>' +
+            '<span class="palette-plus" aria-hidden="true">+</span>' +
+          '</button>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  }
+
+  function blockCardHTML(block) {
+    const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
+    const index = state.blocks.indexOf(block);
+    const maxLen = blockLengthMax(block);
+    const value = Math.min(block.length, maxLen);
+    const pct = ((value - 0.5) / Math.max(0.5, maxLen - 0.5) * 100).toFixed(1);
+    const sec = D.SECTIONS.find(function (s) { return s.value === Number(block.section); }) || D.SECTIONS[3];
+    const cost = blockCost(block.id);
+    return '<article class="brick" data-block="' + block.id + '" style="--brick:' + def.color + '">' +
+      '<div class="brick-head">' +
+        '<span class="brick-grip" draggable="true" role="button" tabindex="0" data-block-grip="' + block.id + '" aria-label="Перетащить блок ' + def.name + '" title="Перетащить">' +
+          '<svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/></g></svg>' +
+        '</span>' +
+        '<span class="brick-icon">' + (BLOCK_ICONS[def.icon] || BLOCK_ICONS.plus) + '</span>' +
+        '<div class="brick-name"><b>' + def.name + '</b><small data-block-meta="' + block.id + '">' + block.circuits + ' ' + circuitsWord(block.circuits) + ' · ' + num(block.length) + ' м · ' + sec.label + '</small></div>' +
+        '<span class="brick-cost" data-block-cost="' + block.id + '">≈ ' + money(cost) + '</span>' +
+        '<div class="brick-actions">' +
+          '<button type="button" class="brick-btn" data-action="block-up" data-id="' + block.id + '" title="Выше" aria-label="Переместить выше"' + (index === 0 ? ' disabled' : '') + '>↑</button>' +
+          '<button type="button" class="brick-btn" data-action="block-down" data-id="' + block.id + '" title="Ниже" aria-label="Переместить ниже"' + (index === state.blocks.length - 1 ? ' disabled' : '') + '>↓</button>' +
+          '<button type="button" class="brick-btn" data-action="block-dup" data-id="' + block.id + '" title="Дублировать" aria-label="Дублировать блок">⧉</button>' +
+          '<button type="button" class="brick-btn is-danger" data-action="block-del" data-id="' + block.id + '" title="Удалить" aria-label="Удалить блок">×</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="brick-controls">' +
+        '<div class="brick-control brick-length">' +
+          '<span>Длина ветви <b data-block-len-out="' + block.id + '">' + num(block.length) + ' м</b></span>' +
+          '<input class="range range-sm" type="range" min="0.5" max="' + maxLen + '" step="0.5" value="' + value + '" data-block-length data-id="' + block.id + '" style="--p:' + pct + '%" aria-label="Длина ветви ' + def.name + '">' +
+        '</div>' +
+        '<label class="brick-control"><span>Сечение</span><select class="mini-select" data-block-field="section" data-id="' + block.id + '">' + sectionOptions(block.section) + '</select></label>' +
+        '<label class="brick-control"><span>Разъём</span><select class="mini-select" data-block-field="connector" data-id="' + block.id + '">' + connectorOptions(block.connector) + '</select></label>' +
+        '<div class="brick-control"><span>Цепи</span><div class="mini-stepper">' +
+          '<button type="button" data-action="block-circuits-minus" data-id="' + block.id + '" aria-label="Меньше цепей">−</button>' +
+          '<b>' + block.circuits + '</b>' +
+          '<button type="button" data-action="block-circuits-plus" data-id="' + block.id + '" aria-label="Больше цепей">+</button>' +
+        '</div></div>' +
+        '<div class="brick-control"><span>Кол-во</span><div class="mini-stepper">' +
+          '<button type="button" data-action="block-qty-minus" data-id="' + block.id + '" aria-label="Меньше блоков">−</button>' +
+          '<b>' + block.qty + '</b>' +
+          '<button type="button" data-action="block-qty-plus" data-id="' + block.id + '" aria-label="Больше блоков">+</button>' +
+        '</div></div>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function blockSummaryHTML() {
+    return '<div class="block-summary">' +
+      '<div class="bs-item"><span>Блоков</span><b>' + state.blocks.length + '</b></div>' +
+      '<div class="bs-item"><span>Цепей</span><b>' + state.circuits + '</b></div>' +
+      '<div class="bs-item"><span>Длина</span><b>' + num(state.length) + ' м</b></div>' +
+      '<div class="bs-item"><span>Разъёмов</span><b>' + lastResult.connectorCount + '</b></div>' +
+      '<button type="button" class="btn btn-ghost btn-small" data-action="block-reset">Сбросить набор</button>' +
+    '</div>';
+  }
+
+  function envGridHTML() {
     const envs = Object.keys(D.ENVIRONMENTS).map(function (id) {
       const env = D.ENVIRONMENTS[id];
       return '<button type="button" class="opt env-card ' + (state.environment === id ? 'is-on' : '') + '" data-action="environment" data-value="' + id + '" aria-pressed="' + (state.environment === id ? 'true' : 'false') + '">' +
@@ -335,15 +513,17 @@
         '<span class="env-hint">' + env.hint + '</span>' +
       '</button>';
     }).join('');
+    return '<div class="field" style="margin-top:24px">' +
+      '<div class="field-label"><span>Условия эксплуатации</span><span class="field-hint">влияет на материалы и цену</span></div>' +
+      '<div class="env-grid" role="group" aria-label="Условия эксплуатации">' + envs + '</div>' +
+    '</div>';
+  }
 
+  /* шаг 2 */
+  function renderStep2() {
     const sec = D.SECTIONS.find(function (s) { return s.value === Number(state.section); }) || D.SECTIONS[3];
-
-    return '<div class="step-head">' +
-        '<p class="step-kicker">Шаг 2 · Параметры</p>' +
-        '<h3>Геометрия и условия</h3>' +
-        '<p class="step-lead">Длина, количество цепей и ветвей определяют материалы и трудозатраты. Условия эксплуатации — защиту и коэффициенты.</p>' +
-      '</div>' +
-      rangeField({
+    const blocks = state.mode === 'blocks';
+    const simpleContent = rangeField({
         key: 'length', label: 'Длина жгута', min: 1, max: 30, step: 0.5, value: state.length,
         text: function (v) { return num(v) + ' м'; },
         marks: ['1 м', '15 м', '30 м']
@@ -360,10 +540,28 @@
       }) +
       '<p class="field-note" style="margin-top:-12px">Сейчас в расчёте: ' + state.circuits + ' ' + circuitsWord(state.circuits) +
         ' · ' + num(state.circuits * state.length) + ' погонных метров провода · до ' + sec.amp + ' А на цепь при сечении ' + sec.label + '.</p>' +
-      '<div class="field" style="margin-top:24px">' +
-        '<div class="field-label"><span>Условия эксплуатации</span><span class="field-hint">влияет на материалы и цену</span></div>' +
-        '<div class="env-grid" role="group" aria-label="Условия эксплуатации">' + envs + '</div>' +
+      '<div class="mode-hint">' +
+        '<div><b>Хотите собрать из модулей?</b><p>Переключитесь на блочный режим: добавляйте свет, розетки, насос и другие модули, меняйте их местами и настройки.</p></div>' +
+        '<button type="button" class="btn btn-ghost btn-small" data-action="mode" data-value="blocks">Собрать блоками →</button>' +
+      '</div>';
+
+    const blocksContent =
+      '<p class="step-lead block-lead">Жгут = магистраль + модули. Добавляйте блоки из палитры, меняйте цепи, длину и разъёмы. Порядок блоков можно перетаскивать.</p>' +
+      trunkCardHTML() +
+      paletteHTML() +
+      '<div class="block-list" id="blockList">' +
+        (state.blocks.length ? state.blocks.map(blockCardHTML).join('') : '<div class="block-empty"><span class="block-empty-icon">' + BLOCK_ICONS.plus + '</span><b>В жгуте пока только магистраль</b><p>Добавьте первый модуль из палитры выше — свет, розетки, насос или силовой выход.</p></div>') +
       '</div>' +
+      blockSummaryHTML();
+
+    return '<div class="step-head">' +
+        '<p class="step-kicker">Шаг 2 · Состав</p>' +
+        '<h3>' + (blocks ? 'Соберите жгут из блоков' : 'Геометрия и условия') + '</h3>' +
+        '<p class="step-lead">' + (blocks ? 'Модульная сборка: блоки можно добавлять, дублировать, перетаскивать и настраивать по отдельности.' : 'Длина, количество цепей и ветвей определяют материалы и трудозатраты. Условия эксплуатации — защиту и коэффициенты.') + '</p>' +
+      '</div>' +
+      modeSwitch() +
+      (blocks ? blocksContent : simpleContent) +
+      envGridHTML() +
       stepNav();
   }
 
@@ -393,14 +591,17 @@
       return optButton({ on: state.colorCode === id, action: 'colors', value: id, name: c.name, desc: c.desc });
     }).join('');
 
+    const blocksMode = state.mode === 'blocks';
+
     return '<div class="step-head">' +
         '<p class="step-kicker">Шаг 3 · Провода</p>' +
         '<h3>Сечение, изоляция и жила</h3>' +
         '<p class="step-lead">Сечение указано на одну жилу. Для силовых цепей берите с запасом по току — конфигуратор посчитает стоимость по выбранному варианту.</p>' +
       '</div>' +
       '<div class="field">' +
-        '<div class="field-label"><span>Сечение жилы</span><span class="field-hint">до 100 А на цепь</span></div>' +
+        '<div class="field-label"><span>' + (blocksMode ? 'Сечение магистрали' : 'Сечение жилы') + '</span><span class="field-hint">до 100 А на цепь</span></div>' +
         '<div class="opt-grid cols-5" role="group" aria-label="Сечение">' + sections + '</div>' +
+        (blocksMode ? '<p class="field-note">Сечения отдельных модулей задаются в шаге 2 — здесь выбирается магистраль и базовое сечение для новых блоков.</p>' : '') +
       '</div>' +
       '<div class="field">' +
         '<div class="field-label"><span>Изоляция</span><span class="field-hint">температурный класс</span></div>' +
@@ -439,15 +640,25 @@
       return optButton({ on: state.labels === id, action: 'labels', value: id, name: l.name, desc: l.desc, meta: l.price ? '+' + int(l.price) + ' ₽' : 'включено' });
     }).join('');
 
+    const blocksMode = state.mode === 'blocks';
+    const connectorField = blocksMode
+      ? '<div class="field">' +
+          '<div class="field-label"><span>Разъёмы по блокам</span><span class="field-hint">' + lastResult.connectorCount + ' шт</span></div>' +
+          '<div class="connector-summary">' + lastResult.connectorName + '</div>' +
+          '<p class="field-note">Разъём каждого модуля и магистрали выбирается в шаге 2. Здесь можно изменить уплотнения и защиту.</p>' +
+          '<button type="button" class="btn btn-ghost btn-small" data-action="step" data-step="2">← Настроить блоки</button>' +
+        '</div>'
+      : '<div class="field">' +
+          '<div class="field-label"><span>Серия разъёмов</span><span class="field-hint">в расчёте ' + lastResult.connectorCount + ' шт</span></div>' +
+          '<div class="opt-grid cols-3" role="group" aria-label="Серия разъёмов">' + connectors + '</div>' +
+        '</div>';
+
     return '<div class="step-head">' +
         '<p class="step-kicker">Шаг 4 · Разъёмы и защита</p>' +
         '<h3>Чем соединять и как защищать</h3>' +
         '<p class="step-lead">Разъёмы подбираем под ток, среду и удобство монтажа. Защита задаёт ресурс жгута в реальных условиях.</p>' +
       '</div>' +
-      '<div class="field">' +
-        '<div class="field-label"><span>Серия разъёмов</span><span class="field-hint">в расчёте ' + lastResult.connectorCount + ' шт</span></div>' +
-        '<div class="opt-grid cols-3" role="group" aria-label="Серия разъёмов">' + connectors + '</div>' +
-      '</div>' +
+      connectorField +
       '<div class="field">' +
         '<button type="button" class="switch-row ' + (state.sealed ? 'is-on' : '') + '" data-action="toggle-sealed" role="switch" aria-checked="' + (state.sealed ? 'true' : 'false') + '">' +
           '<span class="switch" aria-hidden="true"><span class="knob"></span></span>' +
@@ -504,26 +715,33 @@
   /* шаг 6 */
   function specRows() {
     const r = lastResult;
-    return [
+    const rows = [
       ['Тип техники', D.TYPES[state.type].name],
       ['Назначение', r.purpose.name],
+      ['Сборка', state.mode === 'blocks' ? 'Модульная, ' + state.blocks.length + ' блоков' : 'По параметрам'],
       ['Напряжение', state.voltage + ' В'],
       ['Партия', state.qty + ' шт'],
       ['Длина', num(state.length) + ' м'],
       ['Цепей', state.circuits + ' ' + circuitsWord(state.circuits)],
-      ['Ветвей', state.branches + ' ' + branchesWord(state.branches)],
+      ['Ветвей', state.branches + ' ' + branchesWord(state.branches)]
+    ];
+    if (state.mode === 'blocks') {
+      rows.push(['Магистраль', num(state.trunk.length) + ' м, ' + (D.CONNECTORS[state.trunk.connector] || {}).name]);
+    }
+    rows.push(
       ['Сечение', r.section.label + ', до ' + r.section.amp + ' А'],
       ['Изоляция', r.insulation.name + ', ' + r.insulation.temp],
       ['Жила', r.conductor.name],
       ['Маркировка', r.colors.name],
-      ['Разъёмы', r.connector.name + ', ' + r.connectorCount + ' шт' + (state.sealed ? ', герметичные' : '')],
+      ['Разъёмы', r.connectorName + ', ' + r.connectorCount + ' шт' + (state.sealed ? ', герметичные' : '')],
       ['Защита', r.sleeve.name],
       ['Класс', r.ip.name + ' — ' + r.ip.desc],
       ['Бирки', r.labels.name],
       ['Опции', extrasText()],
       ['Код расчёта', r.code],
       ['Срок', r.leadDays + ' раб. дн.']
-    ];
+    );
+    return rows;
   }
 
   function extrasText() {
@@ -554,8 +772,8 @@
 
     return '<div class="step-head">' +
         '<p class="step-kicker">Шаг 6 · Итог</p>' +
-        '<h3>Предварительный расчёт готов</h3>' +
-        '<p class="step-lead">Код конфигурации ' + r.code + '. Сохраните ссылку или скачайте спецификацию — расчёт зафиксирован. Точную цену подтвердим после проверки ТЗ.</p>' +
+        '<h3>' + (state.mode === 'blocks' ? 'Модульный расчёт готов' : 'Предварительный расчёт готов') + '</h3>' +
+        '<p class="step-lead">Код конфигурации ' + r.code + '. ' + (state.mode === 'blocks' ? 'Собрано ' + state.blocks.length + ' блоков, ' : '') + 'Сохраните ссылку или скачайте спецификацию — расчёт зафиксирован. Точную цену подтвердим после проверки ТЗ.</p>' +
       '</div>' +
       '<div class="result-top">' +
         '<div class="result-price">' +
@@ -579,6 +797,7 @@
         '<p class="field-note">Цена без НДС и доставки. Материалы и работа — по текущему прайсу; коэффициент учитывает тип техники, среду, герметизацию и IP.</p>' +
       '</div>' +
       '<div class="result-actions">' +
+        (state.mode === 'blocks' ? '<button type="button" class="btn btn-ghost" data-action="step" data-step="2">Редактировать блоки</button>' : '') +
         '<button type="button" class="btn btn-ghost" data-action="download">Скачать спецификацию</button>' +
         '<button type="button" class="btn btn-ghost" data-action="print">Печать / PDF</button>' +
         '<button type="button" class="btn btn-ghost" data-action="share">Ссылка на расчёт</button>' +
@@ -602,7 +821,95 @@
   }
 
   /* ---------- эскиз ---------- */
+  function drawBlockHarness() {
+    const t = D.TYPES[state.type];
+    const r = lastResult;
+    const accent = t.accent;
+    const x0 = 64;
+    const x1 = 596;
+    const y = 205;
+    const blocks = state.blocks.slice(0, 8);
+    const n = blocks.length;
+    const span = x1 - x0 - 150;
+    const xs = blocks.map(function (_, i) {
+      return x0 + 75 + (n === 1 ? span / 2 : span * i / (n - 1));
+    });
+
+    function connector(x, cy, label, below, color) {
+      const ly = below ? cy + 22 : cy - 12;
+      return '<g>' +
+        '<rect x="' + (x - 19) + '" y="' + (cy - 10) + '" width="38" height="20" rx="4" fill="#08141D" stroke="' + color + '" stroke-width="1.4"/>' +
+        [-12, -6, 0, 6, 12].map(function (dx) {
+          return '<circle cx="' + (x + dx) + '" cy="' + cy + '" r="1.5" fill="' + color + '"/>';
+        }).join('') +
+        '<text x="' + x + '" y="' + ly + '" text-anchor="middle" class="dwg-label">' + label + '</text>' +
+      '</g>';
+    }
+
+    const bricks = blocks.map(function (block, i) {
+      const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
+      const color = def.color;
+      const dir = i % 2 === 0 ? -1 : 1;
+      const cx = xs[i];
+      const cy = y + dir * 78;
+      const bw = 84;
+      const bh = 34;
+      const stemEnd = cy + (dir < 0 ? bh / 2 : -bh / 2);
+      const connY = cy + dir * (bh / 2 + 14);
+      const qty = block.qty > 1 ? ' ×' + block.qty : '';
+      const stem = 'M' + cx + ' ' + y + 'V' + stemEnd;
+      return '<path d="' + stem + '" stroke="#DCE6EA" stroke-opacity=".1" stroke-width="8" stroke-linecap="round" fill="none"/>' +
+        '<path d="' + stem + '" stroke="' + color + '" stroke-width="2" stroke-linecap="round" fill="none"/>' +
+        '<circle cx="' + cx + '" cy="' + y + '" r="3.5" fill="#08141D" stroke="' + color + '" stroke-width="1.2"/>' +
+        '<rect x="' + (cx - bw / 2) + '" y="' + (cy - bh / 2) + '" width="' + bw + '" height="' + bh + '" rx="5" fill="' + color + '" fill-opacity=".16" stroke="' + color + '" stroke-width="1.3"/>' +
+        [-14, 0, 14].map(function (dx) {
+          return '<circle cx="' + (cx + dx) + '" cy="' + (cy - bh / 2 + 4) + '" r="2" fill="' + color + '" fill-opacity=".65"/>';
+        }).join('') +
+        '<text x="' + cx + '" y="' + (cy - 2) + '" text-anchor="middle" class="dwg-brick-name">' + def.short + '</text>' +
+        '<text x="' + cx + '" y="' + (cy + 10) + '" text-anchor="middle" class="dwg-brick-sub">' + block.circuits + ' ЦЕП.' + qty + '</text>' +
+        connector(cx, connY, 'X' + (i + 3), dir > 0, color);
+    }).join('');
+
+    const extra = state.blocks.length - blocks.length;
+    return '<svg viewBox="0 0 660 400" role="img" aria-label="Модульный эскиз жгута ' + r.code + '">' +
+      '<defs><linearGradient id="pvGrad" x1="0" y1="0" x2="1" y2="0">' +
+        '<stop offset="0" stop-color="#8F4A24"/><stop offset=".52" stop-color="#E8B080"/><stop offset="1" stop-color="#B65F2C"/>' +
+      '</linearGradient></defs>' +
+      '<g fill="none" stroke="#E9E2D3" stroke-opacity=".2">' +
+        '<rect x="12" y="12" width="636" height="376" rx="3"/>' +
+        '<rect x="21" y="21" width="618" height="358" rx="2" stroke-opacity=".09"/>' +
+      '</g>' +
+      '<text x="30" y="42" class="dwg-note">' + t.name.toUpperCase() + ' · ' + state.blocks.length + ' БЛОКОВ · ' + state.circuits + ' ЦЕПЕЙ</text>' +
+      '<text x="630" y="42" text-anchor="end" class="dwg-note">' + r.code + '</text>' +
+      '<line x1="30" y1="50" x2="630" y2="50" stroke="#E9E2D3" stroke-opacity=".12"/>' +
+      '<path d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="#DCE6EA" stroke-opacity=".1" stroke-width="12" stroke-linecap="round" fill="none"/>' +
+      '<path d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="' + accent + '" stroke-opacity=".2" stroke-width="7" stroke-linecap="round" fill="none"/>' +
+      '<path d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="url(#pvGrad)" stroke-width="2.2" stroke-linecap="round" fill="none"/>' +
+      '<path class="dwg-pulse" d="M' + x0 + ' ' + y + 'H' + x1 + '" stroke="#FFD9B0" stroke-width="2" stroke-dasharray="3 34" stroke-linecap="round" fill="none"/>' +
+      bricks +
+      connector(x0, y, 'X1', false, accent) +
+      connector(x1, y, 'X2', false, accent) +
+      (extra > 0 ? '<text x="' + (x1 - 20) + '" y="' + (y - 36) + '" text-anchor="end" class="dwg-note">+ЕЩЁ ' + extra + '</text>' : '') +
+      '<g stroke="#93A9B3" stroke-opacity=".55">' +
+        '<path d="M' + x0 + ' 352H396"/><path d="M' + x0 + ' 345v14M396 345v14"/>' +
+        '<path d="M' + x0 + ' 352l9-4v8zM396 352l-9-4v8z" fill="#93A9B3" stroke="none" fill-opacity=".65"/>' +
+      '</g>' +
+      '<text x="230" y="344" text-anchor="middle" class="dwg-dimtext">L = ' + int(state.length * 1000) + ' мм</text>' +
+      '<g>' +
+        '<rect x="422" y="350" width="214" height="36" fill="#08141D" stroke="#93A9B3" stroke-opacity=".28"/>' +
+        '<line x1="422" y1="368" x2="636" y2="368" stroke="#93A9B3" stroke-opacity=".2"/>' +
+        '<text x="430" y="363" class="dwg-strong">ЖГУТ.ПРО</text>' +
+        '<text x="430" y="380" class="dwg-muted">' + r.code + ' · ' + t.name + '</text>' +
+        '<text x="628" y="363" text-anchor="end" class="dwg-muted">МОДУЛЬНАЯ</text>' +
+        '<text x="628" y="380" text-anchor="end" class="dwg-muted">М 1:10</text>' +
+      '</g>' +
+      '<text x="30" y="380" class="dwg-muted">НЕ ДЛЯ ПРОИЗВОДСТВА</text>' +
+      '<text x="30" y="366" class="dwg-muted">' + (state.sealed ? 'ГЕРМЕТИЧНЫЕ РАЗЪЁМЫ' : 'РАЗЪЁМЫ БЕЗ УПЛОТНЕНИЙ') + ' · ' + r.ip.name + '</text>' +
+    '</svg>';
+  }
+
   function drawHarness() {
+    if (state.mode === 'blocks') return drawBlockHarness();
     const t = D.TYPES[state.type];
     const r = lastResult;
     const accent = t.accent;
@@ -755,15 +1062,232 @@
   }
 
   function patch(changes, rerenderStep) {
+    if (state.mode === 'blocks' && changes.section !== undefined && state.trunk) {
+      state.trunk.section = Number(changes.section);
+    }
     Object.assign(state, changes);
     state = D.sanitize(state);
     afterChange(rerenderStep !== false);
   }
 
+  function switchMode(mode) {
+    if (mode !== 'blocks' && mode !== 'simple') return;
+    if (mode === state.mode) return;
+    if (mode === 'blocks') {
+      state.simpleSnapshot = {
+        circuits: state.circuits,
+        length: state.length,
+        branches: state.branches,
+        section: state.section,
+        connectors: state.connectors
+      };
+      if (!state.blocks.length) state.blocks = D.seedBlocks(state.type);
+      if (!state.trunk) state.trunk = D.defaultTrunk(state.type);
+      state.mode = 'blocks';
+      syncBlocksAggregate();
+      state = D.sanitize(state);
+      afterChange(true);
+      toast('Модульный режим: добавляйте блоки, меняйте местами и настраивайте.');
+    } else {
+      state.mode = 'simple';
+      if (state.simpleSnapshot) {
+        Object.assign(state, state.simpleSnapshot);
+        delete state.simpleSnapshot;
+      } else {
+        const base = D.presetState(state.type, state.purpose);
+        state.circuits = base.circuits;
+        state.length = base.length;
+        state.branches = base.branches;
+        state.section = base.section;
+        state.connectors = base.connectors;
+      }
+      state = D.sanitize(state);
+      afterChange(true);
+      toast('Режим параметров: длина, цепи и ветви.');
+    }
+  }
+
+  function limitMessage(extraCircuits, extraLength, extraBranches) {
+    if (state.circuits + extraCircuits > 64) return 'Лимит: 64 цепи. Уменьшите другой блок.';
+    if (state.length + extraLength > 30) return 'Лимит: 30 м общей длины. Уменьшите другой блок.';
+    if (state.branches + extraBranches > 12) return 'Лимит: 12 ветвей. Уменьшите количество блоков.';
+    return '';
+  }
+
+  function addBlock(typeId) {
+    const def = D.BLOCKS[typeId];
+    if (!def) return;
+    const warn = limitMessage(def.circuits, def.length, 1);
+    if (warn) { toast(warn); return; }
+    const block = {
+      id: nextBlockId(),
+      type: typeId,
+      circuits: def.circuits,
+      length: def.length,
+      section: def.section,
+      connector: def.connector,
+      qty: 1
+    };
+    state.blocks.push(block);
+    syncBlocksAggregate();
+    afterChange(true);
+    toast('Блок «' + def.name + '» добавлен в жгут');
+    requestAnimationFrame(function () {
+      const el = document.querySelector('[data-block="' + block.id + '"]');
+      if (el) el.scrollIntoView({ behavior: motionOK ? 'smooth' : 'auto', block: 'nearest' });
+    });
+  }
+
+  function removeBlock(id) {
+    const block = findBlock(id);
+    if (!block) return;
+    state.blocks = state.blocks.filter(function (b) { return b.id !== id; });
+    syncBlocksAggregate();
+    afterChange(true);
+    toast('Блок «' + (D.BLOCKS[block.type] || {}).name + '» удалён');
+  }
+
+  function duplicateBlock(id) {
+    const block = findBlock(id);
+    if (!block) return;
+    const warn = limitMessage(block.circuits, block.length, 1);
+    if (warn) { toast(warn); return; }
+    const copy = Object.assign({}, block, { id: nextBlockId(), qty: 1 });
+    const index = state.blocks.indexOf(block);
+    state.blocks.splice(index + 1, 0, copy);
+    syncBlocksAggregate();
+    afterChange(true);
+    toast('Блок продублирован');
+  }
+
+  function moveBlock(id, delta) {
+    const index = state.blocks.findIndex(function (b) { return b.id === id; });
+    const next = index + delta;
+    if (index < 0 || next < 0 || next >= state.blocks.length) return;
+    const tmp = state.blocks[index];
+    state.blocks[index] = state.blocks[next];
+    state.blocks[next] = tmp;
+    afterChange(true);
+  }
+
+  function adjustBlockCircuits(id, delta) {
+    const block = findBlock(id);
+    if (!block) return;
+    if (block.circuits + delta < 1 || block.circuits + delta > 12) return;
+    if (delta > 0) {
+      const warn = limitMessage(delta, 0, 0);
+      if (warn) { toast(warn); return; }
+    }
+    block.circuits += delta;
+    syncBlocksAggregate();
+    afterChange(true);
+  }
+
+  function adjustBlockQty(id, delta) {
+    const block = findBlock(id);
+    if (!block) return;
+    if (block.qty + delta < 1 || block.qty + delta > 4) return;
+    if (delta > 0) {
+      const warn = limitMessage(block.circuits * delta, block.length * delta, delta);
+      if (warn) { toast(warn); return; }
+    }
+    block.qty += delta;
+    syncBlocksAggregate();
+    afterChange(true);
+  }
+
+  function updateBlockField(id, field, value) {
+    const block = findBlock(id);
+    if (!block) return;
+    if (field === 'section') block.section = Number(value);
+    else if (field === 'connector') block.connector = value;
+    syncBlocksAggregate();
+    afterChange(true);
+  }
+
+  function resetBlocks() {
+    state.blocks = D.seedBlocks(state.type);
+    state.trunk = D.defaultTrunk(state.type);
+    syncBlocksAggregate();
+    afterChange(true);
+    toast('Набор блоков сброшен к типовому');
+  }
+
+  function onBlockLength(el) {
+    const block = findBlock(el.dataset.id);
+    if (!block) return;
+    const max = blockLengthMax(block);
+    const value = Math.min(parseFloat(el.value), max);
+    if (isNaN(value)) return;
+    block.length = value;
+    el.value = value;
+    const pct = ((value - 0.5) / Math.max(0.5, max - 0.5) * 100).toFixed(1);
+    el.style.setProperty('--p', pct + '%');
+    syncBlocksAggregate();
+    lastResult = C.calc(state, D);
+    const out = document.querySelector('[data-block-len-out="' + block.id + '"]');
+    if (out) out.textContent = num(value) + ' м';
+    refreshBlockCard(block);
+    scheduleAside();
+    updateMobileBar();
+    persistSoon();
+  }
+
+  function refreshBlockCard(block) {
+    const def = D.BLOCKS[block.type] || D.BLOCKS.reserve;
+    const sec = D.SECTIONS.find(function (s) { return s.value === Number(block.section); }) || D.SECTIONS[3];
+    const meta = document.querySelector('[data-block-meta="' + block.id + '"]');
+    if (meta) meta.textContent = block.circuits + ' ' + circuitsWord(block.circuits) + ' · ' + num(block.length) + ' м · ' + sec.label;
+    const cost = document.querySelector('[data-block-cost="' + block.id + '"]');
+    if (cost) cost.textContent = '≈ ' + money(blockCost(block.id));
+  }
+
+  function onTrunkLength(el) {
+    const max = trunkLengthMax();
+    const value = Math.min(parseFloat(el.value), max);
+    if (isNaN(value)) return;
+    state.trunk.length = value;
+    el.value = value;
+    const pct = max > 1 ? ((value - 1) / (max - 1) * 100).toFixed(1) : '100';
+    el.style.setProperty('--p', pct + '%');
+    const out = document.querySelector('[data-trunk-out]');
+    if (out) out.textContent = num(value) + ' м';
+    syncBlocksAggregate();
+    lastResult = C.calc(state, D);
+    document.querySelectorAll('[data-block]').forEach(function (card) {
+      const block = findBlock(card.dataset.block);
+      if (block) refreshBlockCard(block);
+    });
+    const trunkCost = document.querySelector('.trunk-cost');
+    if (trunkCost) trunkCost.textContent = '≈ ' + money(lastResult.trunkCost || 0);
+    scheduleAside();
+    updateMobileBar();
+    persistSoon();
+  }
+
+  function reorderBlock(dragId, targetId, before) {
+    if (!dragId || dragId === targetId) return;
+    const from = state.blocks.findIndex(function (b) { return b.id === dragId; });
+    if (from < 0) return;
+    const item = state.blocks.splice(from, 1)[0];
+    let to = state.blocks.findIndex(function (b) { return b.id === targetId; });
+    if (to < 0) to = state.blocks.length;
+    if (!before) to += 1;
+    state.blocks.splice(to, 0, item);
+    afterChange(true);
+  }
+
   function setType(typeId) {
     if (!D.TYPES[typeId]) return;
     const base = D.presetState(typeId, D.TYPES[typeId].purposes[0].id);
-    state = D.sanitize(Object.assign({}, base, { qty: state.qty, comment: state.comment }));
+    const keepBlocks = state.mode === 'blocks';
+    state = D.sanitize(Object.assign({}, base, {
+      qty: state.qty,
+      comment: state.comment,
+      mode: state.mode,
+      blocks: keepBlocks ? D.seedBlocks(typeId) : [],
+      trunk: D.defaultTrunk(typeId)
+    }));
     step = 1;
     renderAll();
   }
@@ -772,7 +1296,13 @@
     const type = D.TYPES[state.type];
     if (!type.purposes.some(function (p) { return p.id === purposeId; })) return;
     const base = D.presetState(state.type, purposeId);
-    state = D.sanitize(Object.assign({}, base, { qty: state.qty, comment: state.comment }));
+    state = D.sanitize(Object.assign({}, base, {
+      qty: state.qty,
+      comment: state.comment,
+      mode: state.mode,
+      blocks: state.blocks,
+      trunk: state.trunk
+    }));
     renderAll();
   }
 
@@ -1044,6 +1574,17 @@
   function handleAction(el) {
     const action = el.dataset.action;
     const value = el.dataset.value;
+    if (action === 'mode') { switchMode(value); return; }
+    if (action === 'block-add') { addBlock(value); return; }
+    if (action === 'block-del') { removeBlock(el.dataset.id); return; }
+    if (action === 'block-dup') { duplicateBlock(el.dataset.id); return; }
+    if (action === 'block-up') { moveBlock(el.dataset.id, -1); return; }
+    if (action === 'block-down') { moveBlock(el.dataset.id, 1); return; }
+    if (action === 'block-circuits-minus') { adjustBlockCircuits(el.dataset.id, -1); return; }
+    if (action === 'block-circuits-plus') { adjustBlockCircuits(el.dataset.id, 1); return; }
+    if (action === 'block-qty-minus') { adjustBlockQty(el.dataset.id, -1); return; }
+    if (action === 'block-qty-plus') { adjustBlockQty(el.dataset.id, 1); return; }
+    if (action === 'block-reset') { resetBlocks(); return; }
     if (action === 'type') { if (state.type !== value) setType(value); return; }
     if (action === 'purpose') { if (state.purpose !== value) setPurpose(value); return; }
     if (action === 'type-jump') {
@@ -1101,6 +1642,8 @@
     document.addEventListener('input', function (e) {
       const el = e.target;
       if (el.matches('input[type="range"][data-bind]')) onRange(el);
+      if (el.matches('[data-block-length]')) onBlockLength(el);
+      if (el.matches('[data-trunk="length"]')) onTrunkLength(el);
       if (el.matches('[data-comment]')) {
         state.comment = el.value.slice(0, 500);
         persistSoon();
@@ -1115,6 +1658,64 @@
     document.addEventListener('change', function (e) {
       const extra = e.target.closest('input[data-extra]');
       if (extra) onExtraToggle(extra);
+      const blockField = e.target.closest('select[data-block-field]');
+      if (blockField) {
+        updateBlockField(blockField.dataset.id, blockField.dataset.blockField, blockField.value);
+        return;
+      }
+      const trunkField = e.target.closest('select[data-trunk-field]');
+      if (trunkField) {
+        state.trunk[trunkField.dataset.trunkField] = trunkField.dataset.trunkField === 'section'
+          ? Number(trunkField.value)
+          : trunkField.value;
+        syncBlocksAggregate();
+        afterChange(true);
+      }
+    });
+
+    document.addEventListener('dragstart', function (e) {
+      const grip = e.target.closest('[data-block-grip]');
+      if (!grip) return;
+      const card = grip.closest('[data-block]');
+      if (!card) return;
+      draggedBlockId = card.dataset.block;
+      card.classList.add('is-dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', draggedBlockId); } catch (err) { /* noop */ }
+        try { e.dataTransfer.setDragImage(card, 30, 30); } catch (err) { /* noop */ }
+      }
+    });
+
+    document.addEventListener('dragend', function () {
+      draggedBlockId = null;
+      document.querySelectorAll('[data-block]').forEach(function (card) {
+        card.classList.remove('is-dragging', 'drag-over');
+      });
+    });
+
+    document.addEventListener('dragover', function (e) {
+      if (!draggedBlockId) return;
+      const card = e.target.closest('[data-block]');
+      if (!card) return;
+      e.preventDefault();
+      document.querySelectorAll('[data-block].drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+      card.classList.add('drag-over');
+    });
+
+    document.addEventListener('drop', function (e) {
+      if (!draggedBlockId) return;
+      const card = e.target.closest('[data-block]');
+      if (!card) return;
+      e.preventDefault();
+      const rect = card.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      const id = draggedBlockId;
+      draggedBlockId = null;
+      reorderBlock(id, card.dataset.block, before);
+      document.querySelectorAll('[data-block]').forEach(function (el) {
+        el.classList.remove('is-dragging', 'drag-over');
+      });
     });
 
     document.addEventListener('submit', function (e) {
@@ -1133,6 +1734,11 @@
     }
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeMenu();
+      const grip = e.target.closest('[data-block-grip]');
+      if (grip && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        moveBlock(grip.dataset.blockGrip, e.key === 'ArrowUp' ? -1 : 1);
+      }
     });
 
     window.addEventListener('scroll', function () {

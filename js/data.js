@@ -250,6 +250,97 @@
     { id: 'pack', name: 'Упаковка и маркировка', desc: 'Бирки, пакет, транспортная коробка', price: 900 }
   ];
 
+  /* ---------- модульные блоки («конструктор Lego») ---------- */
+  const BLOCKS = {
+    lighting: {
+      name: 'Освещение', short: 'СВЕТ', desc: 'Салон, палуба, подсветка',
+      circuits: 4, length: 2.5, section: 1.5, connector: 'superseal',
+      color: '#D9A441', icon: 'bulb'
+    },
+    sockets: {
+      name: 'Розетки 12 В', short: 'РОЗЕТКИ', desc: 'USB, прикуриватель, инвертор',
+      circuits: 3, length: 2, section: 2.5, connector: 'superseal',
+      color: '#4C9BD1', icon: 'socket'
+    },
+    pump: {
+      name: 'Насос и вода', short: 'НАСОС', desc: 'Помпа, датчик уровня, клапан',
+      circuits: 2, length: 2.5, section: 1.5, connector: 'dt',
+      color: '#4FA3A0', icon: 'drop'
+    },
+    heater: {
+      name: 'Отопление', short: 'ОТОПЛ.', desc: 'Отопитель, термостат, питание',
+      circuits: 3, length: 3, section: 1.5, connector: 'dt',
+      color: '#C97B4A', icon: 'flame'
+    },
+    sensors: {
+      name: 'Датчики', short: 'ДАТЧИКИ', desc: 'Уровни, температура, M12',
+      circuits: 2, length: 2, section: 0.75, connector: 'm12',
+      color: '#8E7CC3', icon: 'gauge'
+    },
+    power: {
+      name: 'Силовой выход', short: 'СИЛА', desc: 'Инвертор, лебёдка, АКБ',
+      circuits: 2, length: 1.5, section: 6, connector: 'anderson',
+      color: '#B65F2C', icon: 'bolt'
+    },
+    panel: {
+      name: 'Панель управления', short: 'ПАНЕЛЬ', desc: 'Пульт, индикация, выключатели',
+      circuits: 6, length: 1.5, section: 0.75, connector: 'dt',
+      color: '#7C8B94', icon: 'panel'
+    },
+    reserve: {
+      name: 'Резерв', short: 'РЕЗЕРВ', desc: 'Задел под доработки',
+      circuits: 2, length: 2, section: 0.75, connector: 'dt',
+      color: '#A8A296', icon: 'plus'
+    }
+  };
+
+  const BLOCK_SETS = {
+    yacht: ['power', 'lighting', 'panel', 'pump', 'sensors'],
+    camper: ['panel', 'lighting', 'sockets', 'pump', 'heater', 'sensors'],
+    car: ['sensors', 'power', 'lighting', 'panel']
+  };
+
+  const TRUNK_DEFAULTS = {
+    yacht: { length: 4, section: 2.5, connector: 'dt' },
+    camper: { length: 3, section: 2.5, connector: 'superseal' },
+    car: { length: 2.5, section: 1.5, connector: 'dt' }
+  };
+
+  function defaultTrunk(typeId) {
+    const base = TRUNK_DEFAULTS[typeId] || TRUNK_DEFAULTS.camper;
+    return { length: base.length, section: base.section, connector: base.connector };
+  }
+
+  function seedBlocks(typeId) {
+    const set = BLOCK_SETS[typeId] || BLOCK_SETS.camper;
+    return set.map(function (type, index) {
+      const def = BLOCKS[type];
+      return {
+        id: 'b' + (index + 1),
+        type: type,
+        circuits: def.circuits,
+        length: def.length,
+        section: def.section,
+        connector: def.connector,
+        qty: 1
+      };
+    });
+  }
+
+  function aggregateBlocks(trunk, blocks) {
+    const t = trunk || { length: 0 };
+    let circuits = 2;
+    let length = Number(t.length) || 0;
+    let branches = 0;
+    (blocks || []).forEach(function (b) {
+      const q = Number(b.qty) || 1;
+      circuits += (Number(b.circuits) || 0) * q;
+      length += (Number(b.length) || 0) * q;
+      branches += q;
+    });
+    return { circuits: circuits, length: Math.round(length * 10) / 10, branches: branches };
+  }
+
   /* ---------- партии ---------- */
   const QTY_OPTIONS = [
     { value: 1, discount: 0 },
@@ -351,8 +442,58 @@
       insulation: 'pvc',
       colorCode: 'din',
       labels: 'thermal',
-      comment: ''
+      comment: '',
+      mode: 'simple',
+      trunk: defaultTrunk(type.id),
+      blocks: []
     });
+  }
+
+  function sanitizeTrunk(raw, typeId) {
+    const base = defaultTrunk(typeId);
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const sectionOk = SECTIONS.some(function (x) { return x.value === Number(r.section); });
+    return {
+      length: clamp(roundHalf(Number(r.length) || base.length), 1, 10),
+      section: sectionOk ? Number(r.section) : base.section,
+      connector: CONNECTORS[r.connector] ? r.connector : base.connector
+    };
+  }
+
+  function sanitizeBlock(raw, index) {
+    if (!raw || typeof raw !== 'object') return null;
+    const type = String(raw.type || '');
+    const def = BLOCKS[type];
+    if (!def) return null;
+    let id = String(raw.id || ('b' + (index + 1))).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
+    if (!id) id = 'b' + (index + 1);
+    const sectionOk = SECTIONS.some(function (x) { return x.value === Number(raw.section); });
+    return {
+      id: id,
+      type: type,
+      circuits: clamp(Math.round(Number(raw.circuits) || def.circuits), 1, 12),
+      length: clamp(roundHalf(Number(raw.length) || def.length), 0.5, 8),
+      section: sectionOk ? Number(raw.section) : def.section,
+      connector: CONNECTORS[raw.connector] ? raw.connector : def.connector,
+      qty: clamp(Math.round(Number(raw.qty) || 1), 1, 4)
+    };
+  }
+
+  function sanitizeBlocks(raw) {
+    const seen = {};
+    const out = [];
+    (Array.isArray(raw) ? raw : []).forEach(function (item, index) {
+      const block = sanitizeBlock(item, index);
+      if (!block) return;
+      if (seen[block.id]) {
+        let suffix = 2;
+        while (seen[block.id + '_' + suffix]) suffix += 1;
+        block.id = block.id + '_' + suffix;
+      }
+      seen[block.id] = true;
+      out.push(block);
+    });
+    return out.slice(0, 12);
   }
 
   function sanitize(raw) {
@@ -385,6 +526,18 @@
       : base.extras.slice();
     s.comment = String(s.comment || '').slice(0, 500);
     delete s.comments;
+
+    s.mode = src.mode === 'blocks' ? 'blocks' : 'simple';
+    s.trunk = sanitizeTrunk(src.trunk, typeId);
+    s.blocks = sanitizeBlocks(src.blocks);
+    if (s.mode === 'blocks') {
+      const agg = aggregateBlocks(s.trunk, s.blocks);
+      s.circuits = clamp(agg.circuits, 4, 64);
+      s.length = clamp(agg.length, 1, 30);
+      s.branches = clamp(agg.branches, 0, 12);
+      s.section = Number(s.trunk.section) || s.section;
+      s.connectors = s.trunk.connector || s.connectors;
+    }
     return s;
   }
 
@@ -403,6 +556,12 @@
     QTY_OPTIONS: QTY_OPTIONS,
     PRESETS: PRESETS,
     CONTACTS: CONTACTS,
+    BLOCKS: BLOCKS,
+    BLOCK_SETS: BLOCK_SETS,
+    TRUNK_DEFAULTS: TRUNK_DEFAULTS,
+    defaultTrunk: defaultTrunk,
+    seedBlocks: seedBlocks,
+    aggregateBlocks: aggregateBlocks,
     presetState: presetState,
     sanitize: sanitize
   };

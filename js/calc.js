@@ -23,6 +23,8 @@
   const BASE_LABOR = 2800;
   const LABOR_PER_CIRCUIT = 320;
   const LABOR_PER_BRANCH = 220;
+  const BLOCK_SETUP_LABOR = 260;
+  const TRUNK_SETUP_LABOR = 400;
   const SEALED_FACTOR = 1.06;
 
   const QTY_LEAD = { 1: 0, 3: 1, 5: 2, 10: 3, 25: 5, 50: 8 };
@@ -51,7 +53,7 @@
     const type = data.TYPES[state.type] || data.TYPES.camper;
     const purpose = type.purposes.find(function (p) { return p.id === state.purpose; }) || type.purposes[0];
     const env = data.ENVIRONMENTS[state.environment] || data.ENVIRONMENTS.dry;
-    const sectionInfo = data.SECTIONS.find(function (s) { return s.value === Number(state.section); }) || data.SECTIONS[3];
+    let sectionInfo = data.SECTIONS.find(function (s) { return s.value === Number(state.section); }) || data.SECTIONS[3];
     const insulation = data.INSULATION[state.insulation] || data.INSULATION.pvc;
     const conductor = data.CONDUCTORS[state.conductor] || data.CONDUCTORS.copper;
     const colors = data.COLORS[state.colorCode] || data.COLORS.din;
@@ -61,25 +63,108 @@
     const labels = data.LABELS[state.labels] || data.LABELS.none;
 
     const qty = Number(state.qty) || 1;
-    const circuits = Number(state.circuits);
-    const length = Number(state.length);
-    const branches = Number(state.branches);
-
+    const isBlocks = state.mode === 'blocks';
     const extras = (Array.isArray(state.extras) ? state.extras : [])
       .map(function (id) { return data.EXTRAS.find(function (e) { return e.id === id; }); })
       .filter(Boolean);
-
     const extrasCost = extras.reduce(function (sum, item) { return sum + item.price; }, 0);
-    const connectorCount = Math.max(2, branches + 2);
+    const factor = type.coef * env.coef * (state.sealed ? SEALED_FACTOR : 1) * ip.coef;
+    const wireFactor = insulation.coef * conductor.coef * colors.coef;
 
-    const wireCost = circuits * length * RATES[sectionInfo.value] * insulation.coef * conductor.coef * colors.coef;
-    const sheathCost = length * sleeve.price;
-    const laborCost = BASE_LABOR + circuits * LABOR_PER_CIRCUIT + branches * LABOR_PER_BRANCH;
-    const connectorsCost = connectorCount * connector.price;
+    let circuits;
+    let length;
+    let branches;
+    let connectorCount;
+    let connectorName = connector.name;
+    let wireCost;
+    let sheathCost;
+    let laborCost;
+    let connectorsCost;
+    let blockCosts = [];
+    let trunkCost = 0;
+    let maxAmp = sectionInfo.amp;
+
+    if (isBlocks) {
+      const trunk = state.trunk && typeof state.trunk === 'object' ? state.trunk : data.defaultTrunk(type.id);
+      const trunkSection = data.SECTIONS.find(function (s) { return s.value === Number(trunk.section); }) || data.SECTIONS[3];
+      const trunkConnector = data.CONNECTORS[trunk.connector] || connector;
+      const trunkCircuits = 2;
+
+      circuits = trunkCircuits;
+      length = Number(trunk.length) || 0;
+      branches = 0;
+      maxAmp = trunkSection.amp;
+      const trunkWire = trunkCircuits * length * RATES[trunkSection.value] * wireFactor;
+      const trunkSheath = length * sleeve.price;
+      const trunkLabor = BASE_LABOR + TRUNK_SETUP_LABOR + trunkCircuits * LABOR_PER_CIRCUIT;
+      const trunkConnectors = 2 * trunkConnector.price;
+
+      wireCost = trunkWire;
+      sheathCost = trunkSheath;
+      laborCost = trunkLabor;
+      connectorsCost = trunkConnectors;
+      trunkCost = round10((trunkWire + trunkSheath + trunkLabor + trunkConnectors) * factor);
+
+      const used = {};
+      const useConnector = function (name, count) { used[name] = (used[name] || 0) + count; };
+      useConnector(trunkConnector.name, 2);
+
+      let minSection = trunkSection;
+      let maxSection = trunkSection;
+
+      (Array.isArray(state.blocks) ? state.blocks : []).forEach(function (block) {
+        const def = data.BLOCKS && data.BLOCKS[block.type];
+        if (!def) return;
+        const q = Math.max(1, Number(block.qty) || 1);
+        const bCircuits = Math.max(1, Number(block.circuits) || def.circuits);
+        const bLength = Math.max(0.5, Number(block.length) || def.length);
+        const bSection = data.SECTIONS.find(function (s) { return s.value === Number(block.section); }) || trunkSection;
+        const bConnector = data.CONNECTORS[block.connector] || connector;
+
+        const bWire = bCircuits * q * bLength * RATES[bSection.value] * wireFactor;
+        const bSheath = bLength * q * sleeve.price;
+        const bLabor = bCircuits * q * LABOR_PER_CIRCUIT + q * LABOR_PER_BRANCH + q * BLOCK_SETUP_LABOR;
+        const bConnectors = q * bConnector.price;
+
+        wireCost += bWire;
+        sheathCost += bSheath;
+        laborCost += bLabor;
+        connectorsCost += bConnectors;
+        circuits += bCircuits * q;
+        length += bLength * q;
+        branches += q;
+        maxAmp = Math.max(maxAmp, bSection.amp);
+        if (bSection.value < minSection.value) minSection = bSection;
+        if (bSection.value > maxSection.value) maxSection = bSection;
+        useConnector(bConnector.name, q);
+
+        blockCosts.push({
+          id: block.id,
+          total: round10((bWire + bSheath + bLabor + bConnectors) * factor)
+        });
+      });
+
+      connectorCount = 2 + branches;
+      connectorName = Object.keys(used).map(function (name) { return name + ' × ' + used[name]; }).join(', ');
+      sectionInfo = {
+        label: minSection.value === maxSection.value ? minSection.label : minSection.label.replace(' мм²', '') + '–' + maxSection.label,
+        amp: maxAmp,
+        value: maxSection.value
+      };
+    } else {
+      circuits = Number(state.circuits);
+      length = Number(state.length);
+      branches = Number(state.branches);
+      connectorCount = Math.max(2, branches + 2);
+      wireCost = circuits * length * RATES[sectionInfo.value] * wireFactor;
+      sheathCost = length * sleeve.price;
+      laborCost = BASE_LABOR + circuits * LABOR_PER_CIRCUIT + branches * LABOR_PER_BRANCH;
+      connectorsCost = connectorCount * connector.price;
+    }
+
     const markingCost = labels.price;
     const core = wireCost + sheathCost + laborCost + connectorsCost + markingCost + extrasCost;
 
-    const factor = type.coef * env.coef * (state.sealed ? SEALED_FACTOR : 1) * ip.coef;
     const priceOne = round10(core * factor);
     const discount = QTY_DISCOUNT[qty] || 0;
     const priceUnit = round10(priceOne * (1 - discount));
@@ -103,10 +188,15 @@
       leadDays: leadDays,
       weight: weight,
       connectorCount: connectorCount,
+      connectorName: connectorName,
       connectorPrice: connector.price,
       maxAmp: sectionInfo.amp,
       wireMeters: Math.round(circuits * length),
       factor: Math.round(factor * 100) / 100,
+      isBlocks: isBlocks,
+      blockCosts: blockCosts,
+      trunkCost: trunkCost,
+      trunk: isBlocks ? state.trunk : null,
       components: {
         wire: wireCost,
         sheath: sheathCost,
